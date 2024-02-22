@@ -1,0 +1,8 @@
+[eth_rpc]
+rpc_chain_id = 1
+
+[http_server]
+addr = "127.0.0.1:3113"
+
+[hypersync]
+url = "https://eth.hypersync.xyz"

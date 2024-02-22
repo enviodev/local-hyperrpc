@@ -4,14 +4,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Config {
-    eth_rpc: EthRpcConfig,
-    server: HttpServerConfig,
-    hypersync: skar_client::Config,
+    pub eth_rpc: EthRpcConfig,
+    pub http_server: HttpServerConfig,
+    pub hypersync: skar_client::Config,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HttpServerConfig {
-    addr: SocketAddr,
+    pub addr: SocketAddr,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
