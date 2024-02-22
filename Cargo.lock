@@ -1694,13 +1694,22 @@ checksum = "01cda141df6706de531b6c46c3a33ecca755538219bd484262fa09410c13539c"
 name = "local-hyperrpc"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "arrayvec",
  "axum",
+ "bytes",
  "clap",
  "env_logger",
+ "futures",
  "log",
  "mimalloc",
+ "rayon",
  "serde",
+ "serde_json",
  "skar-client",
+ "skar-format",
+ "skar-net-types",
+ "skar-schema",
  "tokio",
  "toml",
 ]

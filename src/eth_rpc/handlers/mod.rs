@@ -43,13 +43,13 @@ use super::types::LogFilterDataWithReqId;
 
 // various helper and shared methods
 
-pub fn handle_method_not_found(reqs_validated: &[RpcRequest]) -> (Vec<RpcResponse>, QueryMetrics) {
+pub fn handle_method_not_found(reqs_validated: &[RpcRequest]) -> Vec<RpcResponse> {
     let res = reqs_validated
         .iter()
         .map(|req| RpcError::MethodNotFound(req.method.clone()).to_response(&req.id))
         .collect();
 
-    (res, QueryMetrics::default())
+    res
 }
 
 fn select_logs(logs: &[Log], selection: LogSelection) -> Vec<Log> {

@@ -3,16 +3,16 @@ use super::*;
 pub async fn handle(
     rpc_handler: Arc<RpcHandler>,
     reqs: &Vec<RpcRequest>,
-) -> (Vec<RpcResponse>, QueryMetrics) {
+) -> Vec<RpcResponse> {
     let mut rpc_responses = Vec::new();
-
-    let latest_block = match resolve_latest_block(&rpc_handler.state.height()) {
+    
+    let latest_block = match resolve_latest_block(&self.client.get_height().await()) {
         Ok(block) => block,
         Err(rpc_error) => {
             for i in reqs {
                 rpc_responses.push(rpc_error.to_response(&i.id));
             }
-            return (rpc_responses, QueryMetrics::default());
+            return rpc_responses;
         }
     };
 
@@ -25,5 +25,5 @@ pub async fn handle(
         ))
     }
 
-    (rpc_responses, QueryMetrics::default())
+    rpc_responses
 }

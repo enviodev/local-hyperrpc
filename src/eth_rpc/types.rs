@@ -1,5 +1,3 @@
-use crate::aux_db::{FilterId, LogFilter};
-
 use anyhow::Context;
 use arrayvec::ArrayVec;
 use serde::de::{self, Visitor};
@@ -86,26 +84,10 @@ impl FilterParams {
         let archive_height = rpc_handler.state.height();
 
         let (from_block, to_block) = if let Some(block_hash) = self.block_hash {
-            if self.from_block.is_some() || self.to_block.is_some() {
-                return Err(RpcError::InvalidParams(
-                    "fromBlock or toBlock isn't allowed in eth_getLogs if blockHash is present."
-                        .into(),
-                ));
-            }
-
-            let nums = rpc_handler
-                .aux_db
-                .map_block_hashes(&[block_hash])
-                .context("map hash to block_number")
-                .map_err(|e| RpcError::InternalError(Arc::new(e)))?;
-            let num = nums
-                .first()
-                .copied()
-                .flatten()
-                .context("get block num")
-                .map_err(|e| RpcError::InternalError(Arc::new(e)))?;
-
-            (num, num + 1)
+            return Err(RpcError::InvalidParams(
+                "Blockhash not implemented yet"
+                    .into(),
+            ));
         } else {
             (
                 resolve_block_number(self.from_block, &archive_height)?,
