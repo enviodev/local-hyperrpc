@@ -1,12 +1,10 @@
 use super::*;
 
-pub async fn handle(
-    rpc_handler: Arc<RpcHandler>,
-    reqs: &Vec<RpcRequest>,
-) -> Vec<RpcResponse> {
+pub async fn handle(rpc_handler: Arc<RpcHandler>, reqs: &Vec<RpcRequest>) -> Vec<RpcResponse> {
     let mut rpc_responses = Vec::new();
-    
-    let latest_block = match resolve_latest_block(&self.client.get_height().await()) {
+
+    let latest_block = match resolve_latest_block(&rpc_handler.skar_client.get_height().await.map(Some))
+    {
         Ok(block) => block,
         Err(rpc_error) => {
             for i in reqs {

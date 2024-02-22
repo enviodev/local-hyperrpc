@@ -1,3 +1,19 @@
+use std::net::SocketAddr;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Config {
+    eth_rpc: EthRpcConfig,
+    server: HttpServerConfig,
+    hypersync: skar_client::Config,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct HttpServerConfig {
+    addr: SocketAddr,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthRpcConfig {
     ///  Maximum number of requests in a batch request

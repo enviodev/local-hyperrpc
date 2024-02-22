@@ -3,7 +3,8 @@ use arrayvec::ArrayVec;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use skar_format::{
-    Address, Block, BlockNumber, Hash, Log, LogArgument, Transaction, TransactionReceipt,
+    Address, Block, BlockNumber, FixedSizeData, Hash, Log, LogArgument, Transaction,
+    TransactionReceipt,
 };
 use skar_net_types::LogSelection;
 use std::fmt;
@@ -80,13 +81,20 @@ impl<T> SingleOrMultiple<T> {
 }
 
 impl FilterParams {
-    pub fn parse_into_log_filter(self, rpc_handler: &RpcHandler) -> Result<LogFilter, RpcError> {
-        let archive_height = rpc_handler.state.height();
+    pub async fn parse_into_log_filter(
+        self,
+        rpc_handler: &RpcHandler,
+    ) -> Result<LogFilter, RpcError> {
+        let archive_height = rpc_handler
+            .skar_client
+            .get_height()
+            .await
+            .context("get height")
+            .map(Some);
 
         let (from_block, to_block) = if let Some(block_hash) = self.block_hash {
             return Err(RpcError::InvalidParams(
-                "Blockhash not implemented yet"
-                    .into(),
+                "Blockhash not implemented yet".into(),
             ));
         } else {
             (
@@ -110,15 +118,10 @@ impl FilterParams {
             }
             None => ArrayVec::new(),
         };
-        // seems like infura uses to_block for this.
-        // +1 because eth_getFilterLogs gets up to including to_block,
-        // so eth_getFilterChanges should get the rest
-        let next_poll_block_number = to_block + 1;
         Ok(LogFilter {
             selection: LogSelection { address, topics },
             from_block,
             to_block,
-            next_poll_block_number,
         })
     }
 }
@@ -175,15 +178,11 @@ pub struct RpcRequestErrorCheck {
     pub error: Option<RpcError>,
 }
 
-#[derive(Debug, Clone)]
-pub struct FilterIdWithReqId {
-    pub filter_id: FilterId,
-    pub req_id: i64,
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
+pub struct LogFilter {
+    pub selection: LogSelection,
+    pub from_block: u64,
+    pub to_block: u64,
 }
 
-#[derive(Debug, Clone)]
-pub struct LogFilterDataWithReqId {
-    pub log_filter: LogFilter,
-    pub filter_id: FilterId,
-    pub req_id: i64,
-}
+pub type FilterId = FixedSizeData<16>;

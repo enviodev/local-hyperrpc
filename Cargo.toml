@@ -22,3 +22,17 @@ env_logger = "0.11"
 log = "0.4"
 anyhow = "1"
 rayon = "1"
+mesc = "0.2.0"
+thiserror = "1"
+url = { version = "2", features = ["serde"] }
+rand = "0.8"
+fastrange-rs = "0.1"
+simd-json = "0.13.4"
+
+[dependencies.reqwest]
+version = "0.11"
+default-features = false
+features = ["json", "rustls-tls", "gzip"]
+
+[dev-dependencies]
+hex-literal = "0.4"

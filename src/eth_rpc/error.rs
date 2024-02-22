@@ -20,6 +20,12 @@ pub enum RpcError {
     LimitExceeded(String),
 }
 
+impl From<anyhow::Error> for RpcError {
+    fn from(e: anyhow::Error) -> Self {
+        Self::InternalError(Arc::new(e))
+    }
+}
+
 impl PartialEq for RpcError {
     fn eq(&self, other: &Self) -> bool {
         use RpcError::*;
