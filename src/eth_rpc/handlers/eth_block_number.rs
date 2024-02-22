@@ -1,9 +1,18 @@
 use super::*;
+use std::cmp;
 
 pub async fn handle(rpc_handler: Arc<RpcHandler>, reqs: &Vec<RpcRequest>) -> Vec<RpcResponse> {
     let mut rpc_responses = Vec::new();
 
-    let latest_block = match resolve_latest_block(&rpc_handler.skar_client.get_height().await.map(Some))
+    let height = match rpc_handler.skar_client.get_height().await {
+        Ok(skar_height) => {
+            let rpc_height = rpc_handler.rpc_client.last_block().await;
+            Ok(Some(cmp::min(skar_height, rpc_height)))
+            }
+        Err(e) => Err(e)
+    };
+
+    let latest_block = match resolve_latest_block(&height)
     {
         Ok(block) => block,
         Err(rpc_error) => {
