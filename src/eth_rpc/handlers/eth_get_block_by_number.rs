@@ -7,9 +7,8 @@ use super::*;
 pub async fn handle(
     rpc_handler: Arc<RpcHandler>,
     reqs: &[RpcRequest],
-) -> (Vec<RpcResponse>, QueryMetrics) {
-    let mut rpc_responses = Vec::new();
-    let mut metrics = QueryMetrics::default();
+) -> Vec<RpcResponse> {
+    let mut rpc_responses = Vec::new();    
 
     let start = Instant::now();
     // parse params
@@ -50,13 +49,12 @@ pub async fn handle(
     let query_ranges_for_headers =
         optimize_query_for_single_block_request(from_blocks_for_headers, rpc_handler.max_block_gap);
 
-    metrics.query_prepare_time += elapsed(&start);
 
     // execute skar query
     let res_block_txns =
-        execute_query_for_block_txns(rpc_handler.state.clone(), query_ranges_for_txns).await;
+        execute_query_for_block_txns(rpc_handler.skar_client.clone(), query_ranges_for_txns).await;
     let res_block_headers =
-        execute_query_for_block_headers(rpc_handler.state.clone(), query_ranges_for_headers).await;
+        execute_query_for_block_headers(rpc_handler.skar_client.clone(), query_ranges_for_headers).await;
 
     // if there are any errors, return rpc_responses
     let ((block_txns, metrics0), (block_headers, metrics1)) =

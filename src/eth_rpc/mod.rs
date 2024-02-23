@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use crate::config::EthRpcConfig;
 use crate::rpc_client::RpcClient;
 
-use self::handlers::{eth_block_number, handle_method_not_found};
+use self::handlers::{eth_block_number, eth_get_block_by_number, handle_method_not_found};
 use self::types::{RpcRequest, RpcResponse};
 
 use skar_client::Client as SkarClient;
@@ -51,7 +51,7 @@ impl RpcHandler {
         reqs: &Vec<RpcRequest>,
     ) -> Vec<RpcResponse> {
         match method {
-            // "eth_getBlockByNumber" => eth_get_block_by_number::handle(self, reqs).await,
+            "eth_getBlockByNumber" => eth_get_block_by_number::handle(self, reqs).await,
             // "eth_getTransactionByBlockNumberAndIndex" => {
             //     eth_get_transaction_by_block_number_and_index::handle(self, reqs).await
             // }

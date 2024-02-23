@@ -23,7 +23,7 @@ use skar_format::{Block, BlockNumber, Hash, Log, LogArgument, Transaction, Trans
 pub mod eth_block_number;
 // pub mod eth_chain_id;
 // pub mod eth_get_block_by_hash;
-// pub mod eth_get_block_by_number;
+pub mod eth_get_block_by_number;
 // pub mod eth_get_block_receipts;
 // pub mod eth_get_filter_changes;
 // pub mod eth_get_filter_logs;
@@ -361,33 +361,32 @@ fn optimize_query_for_single_block_request(
 //     Ok((resps, metrics))
 // }
 
-// async fn execute_query_for_block_txns(
-//     state: Arc<State>,
-//     query_ranges: Vec<BlockRange>,
-// ) -> Result<(BTreeMap<u64, Block<Transaction>>, QueryMetrics), RpcError> {
-//     let mut futures = Vec::new();
-//     for block_range in query_ranges {
-//         let state = state.clone();
-//         let single_res_block_with_transaction =
-//             async move { state.get_blocks_with_transactions(block_range).await };
+async fn execute_query_for_block_txns(
+    state: Arc<skar_client::Client>,
+    query_ranges: Vec<BlockRange>,
+) -> Result<BTreeMap<u64, Block<Transaction>>, RpcError> {
+    let mut futures = Vec::new();
+    for block_range in query_ranges {
+        let state = state.clone();
+        let single_res_block_with_transaction =
+            async move { state.get_blocks_with_transactions(block_range).await }; 
 
-//         futures.push(single_res_block_with_transaction);
-//     }
+        futures.push(single_res_block_with_transaction);
+    }
 
-//     let resp = try_join_buffered(futures.into_iter(), CONCURRENCY)
-//         .await
-//         .map_err(|e| RpcError::InternalError(e.into()))?;
+    let resp = try_join_buffered(futures.into_iter(), CONCURRENCY)
+        .await
+        .map_err(|e| RpcError::InternalError(e.into()))?;
 
-//     let mut metrics = QueryMetrics::default();
-//     let mut resps = BTreeMap::new();
+    let mut resps = BTreeMap::new();
 
-//     for (res, res_metrics) in resp {
-//         metrics += res_metrics;
-//         resps.extend(res);
-//     }
+    for (res, res_metrics) in resp {
+        
+        resps.extend(res);
+    }
 
-//     Ok((resps, metrics))
-// }
+    Ok(resps)
+}
 
 // async fn execute_query_for_block_headers(
 //     state: Arc<State>,
