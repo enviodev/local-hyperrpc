@@ -33,7 +33,7 @@ impl HttpServer {
         
         .route(
             "/",
-            axum::routing::get(run_rpc_query).with_state(state.clone()),
+            axum::routing::post(run_rpc_query).with_state(state.clone()),
         )
         ;
 
