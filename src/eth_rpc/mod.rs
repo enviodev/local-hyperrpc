@@ -69,7 +69,7 @@ impl RpcHandler {
             // "eth_uninstallFilter" => eth_uninstall_filter::handle(self, reqs),
             "eth_blockNumber" => eth_block_number::handle(self, reqs).await,
             // "eth_chainId" => eth_chain_id::handle(self, reqs),
-            _ => handle_method_not_found(reqs),
+            _ => handle_method_not_found(self, reqs).await,
         }
     }
 }

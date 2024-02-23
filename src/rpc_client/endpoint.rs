@@ -115,6 +115,7 @@ impl Endpoint {
             RpcRequestImpl::GetTransactionReceipt(block_number, _) => Some(*block_number),
             RpcRequestImpl::GetBlockReceipts(block_number) => Some(*block_number),
             RpcRequestImpl::TraceBlock(block_number) => Some(*block_number),
+            RpcRequestImpl::Proxy { .. } => None,
         }
     }
 }
@@ -319,5 +320,7 @@ fn method_name_single(req: &RpcRequestImpl) -> &'static str {
         RpcRequestImpl::GetTransactionReceipt(_, _) => "eth_getTransactionReceipt",
         RpcRequestImpl::GetBlockReceipts(_) => "eth_getBlockReceipts",
         RpcRequestImpl::TraceBlock(_) => "trace_block",
+        // TODO: map this to correct method using method field
+        RpcRequestImpl::Proxy { .. } => "proxy",
     }
 }

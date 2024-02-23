@@ -1,3 +1,5 @@
+use crate::rpc_client::{self, RpcRequestImpl};
+
 use super::error::RpcError;
 use super::types::{
     BlockVariant, FilterParams, RpcBlockNumber, RpcRequest, RpcResponse, RpcResponseData,
@@ -38,13 +40,36 @@ pub struct BlockRange(u64, u64);
 
 // various helper and shared methods
 
-pub fn handle_method_not_found(reqs_validated: &[RpcRequest]) -> Vec<RpcResponse> {
-    let res = reqs_validated
-        .iter()
-        .map(|req| RpcError::MethodNotFound(req.method.clone()).to_response(&req.id))
-        .collect();
+pub async fn handle_method_not_found(
+    rpc_handler: Arc<RpcHandler>,
+    reqs_validated: &[RpcRequest],
+) -> Vec<RpcResponse> {
+    let mut resps = Vec::new();
 
-    res
+    for chunk in reqs_validated.chunks(50) {
+        let chunk = chunk
+            .iter()
+            .map(|req| RpcRequestImpl::Proxy {
+                params: req.params.clone(),
+                method: req.method.clone(),
+            })
+            .collect::<Vec<_>>();
+
+        let req = rpc_client::RpcRequest::Batch(chunk);
+
+        // TODO: actually handle error
+        let r = rpc_handler.rpc_client.send(req).await.unwrap();
+
+        let r: Vec<serde_json::Value> = r.try_into().unwrap();
+
+        resps.extend_from_slice(&r);
+    }
+
+    resps.into_iter().zip(reqs_validated.iter()).map(|(res, req)| RpcResponse {
+        id: req.id,
+        jsonrpc: req.jsonrpc.clone(),
+        result: Ok(RpcResponseData::Proxy(res)),
+    }).collect()
 }
 
 fn select_logs(logs: &[Log], selection: LogSelection) -> Vec<Log> {

@@ -106,6 +106,10 @@ pub fn serialize_individual_response(builder: &mut BytesBuilder, response: &RpcR
                 RpcResponseData::UninstallFilter(filter_uninstalled) => {
                     builder.push(Bytes::from(filter_uninstalled.to_string()));
                 }
+                RpcResponseData::Proxy(res) => {
+                    // TODO: maybe handle error instead of unwrap
+                    builder.push(Bytes::from(serde_json::to_vec(&res).unwrap()));
+                }
             }
 
             builder.push_static(r#"}"#);

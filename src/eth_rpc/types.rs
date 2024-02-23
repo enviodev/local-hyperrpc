@@ -164,6 +164,7 @@ pub enum RpcResponseData {
     Transaction(Option<Transaction>),
     FilterId(FilterId),
     UninstallFilter(bool),
+    Proxy(serde_json::Value),
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

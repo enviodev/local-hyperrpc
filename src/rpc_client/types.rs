@@ -9,6 +9,10 @@ pub enum RpcRequestImpl {
     GetTransactionReceipt(BlockNumber, Hash),
     GetBlockReceipts(BlockNumber),
     TraceBlock(BlockNumber),
+    Proxy {
+        params: serde_json::Value,
+        method: String,
+    },
 }
 
 pub enum RpcResponseImpl {
@@ -17,6 +21,7 @@ pub enum RpcResponseImpl {
     GetTransactionReceipt(TransactionReceipt),
     GetBlockReceipts(Vec<TransactionReceipt>),
     TraceBlock(Vec<Trace>),
+    Proxy(serde_json::Value),
 }
 
 #[derive(Clone)]
@@ -155,6 +160,23 @@ impl TryInto<Vec<Trace>> for MaybeBatch<RpcResponseImpl> {
     }
 }
 
+impl TryInto<Vec<serde_json::Value>> for MaybeBatch<RpcResponseImpl> {
+    type Error = ();
+
+    fn try_into(self) -> StdResult<Vec<serde_json::Value>, Self::Error> {
+        match self {
+            MaybeBatch::Batch(resps) => resps
+                .into_iter()
+                .map(|r| match r {
+                    RpcResponseImpl::Proxy(r) => Ok(r),
+                    _ => Err(()),
+                })
+                .collect(),
+            _ => Err(()),
+        }
+    }
+}
+
 impl RpcResponse {
     pub fn try_into_single<T>(self) -> Option<T>
     where
@@ -217,6 +239,12 @@ impl RpcRequestImpl {
             RpcRequestImpl::TraceBlock(block_num) => serde_json::json!({
                 "method": "trace_block",
                 "params": [block_num],
+                "id": idx,
+                "jsonrpc": "2.0",
+            }),
+            RpcRequestImpl::Proxy { params, method } => serde_json::json!({
+                "method": method,
+                "params": params,
                 "id": idx,
                 "jsonrpc": "2.0",
             }),
@@ -292,6 +320,7 @@ impl RpcRequestImpl {
             Self::TraceBlock(_) => serde_json::from_value(res)
                 .context("deserialize")
                 .map(RpcResponseImpl::TraceBlock),
+            Self::Proxy { .. } => Ok(RpcResponseImpl::Proxy(res)),
         }
     }
 }
