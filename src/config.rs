@@ -16,6 +16,8 @@ pub struct HttpServerConfig {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EthRpcConfig {
+    /// Url to hyperrpc
+    pub hyperrpc_url: String,
     ///  Maximum number of requests in a batch request
     #[serde(default = "default_max_requests_in_batch")]
     pub max_requests_in_batch: usize,

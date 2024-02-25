@@ -22,6 +22,7 @@ pub struct RpcHandler {
     pub skar_client: SkarClient,
     pub query_handler: QueryHandler,
     pub rpc_client: RpcClient,
+    pub hyperrpc_client: RpcClient,
     pub rpc_version: String,
     pub chain_id: u64,
     pub max_block_gap: u64,
@@ -33,12 +34,22 @@ pub struct RpcHandler {
 
 impl RpcHandler {
     pub fn new(skar_client: SkarClient, rpc_cfg: EthRpcConfig) -> Result<Self> {
+        let mesc_cfg = mesc::get_endpoint_by_network(rpc_cfg.rpc_chain_id, None)
+            .context("load mesc config")?
+            .context("endpoint for this chain not found")?;
+        let rpc_client =
+            RpcClient::new(mesc_cfg.name, mesc_cfg.url).context("create rpc client")?;
+
+        let hyperrpc_client = RpcClient::new("HyperRPC".to_owned(), rpc_cfg.hyperrpc_url)
+            .context("create hyperrpc client")?;
+
         let query_handler = QueryHandler::new(skar_client.clone());
 
         Ok(RpcHandler {
             skar_client,
             query_handler,
-            rpc_client: RpcClient::new(rpc_cfg.rpc_chain_id).context("create rpc client")?,
+            rpc_client,
+            hyperrpc_client,
             rpc_version: rpc_cfg.json_rpc_version,
             chain_id: rpc_cfg.rpc_chain_id,
             max_block_gap: rpc_cfg.max_block_gap,
@@ -55,6 +66,12 @@ impl RpcHandler {
         reqs: &Vec<RpcRequest>,
     ) -> Vec<RpcResponse> {
         match method {
+            "eth_getTransactionByBlockHashAndIndex"
+            | "eth_getTransactionByHash"
+            | "eth_getBlockByHash"
+            | "eth_getTransactionReceipt" => {
+                handlers::handle_method_not_found(&self.hyperrpc_client, reqs).await
+            }
             "eth_getBlockByNumber" => handlers::eth_get_block_by_number::handle(self, reqs).await,
             "eth_getTransactionByBlockNumberAndIndex" => {
                 handlers::eth_get_transaction_by_block_number_and_index::handle(self, reqs).await
@@ -63,7 +80,7 @@ impl RpcHandler {
             "eth_getLogs" => handlers::eth_get_logs::handle(self, reqs).await,
             "eth_blockNumber" => handlers::eth_block_number::handle(self, reqs).await,
             "eth_chainId" => handlers::eth_chain_id::handle(self, reqs),
-            _ => handlers::handle_method_not_found(self, reqs).await,
+            _ => handlers::handle_method_not_found(&self.rpc_client, reqs).await,
         }
     }
 }

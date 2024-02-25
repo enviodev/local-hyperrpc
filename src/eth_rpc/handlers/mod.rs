@@ -1,6 +1,6 @@
 use crate::query_handler::from_arrow::batch_to_logs;
 use crate::query_handler::QueryHandler;
-use crate::rpc_client::{self, RpcRequestImpl};
+use crate::rpc_client::{self, RpcClient, RpcRequestImpl};
 use crate::BlockRange;
 
 use super::error::RpcError;
@@ -33,7 +33,7 @@ pub mod eth_get_transaction_by_block_number_and_index;
 // various helper and shared methods
 
 pub async fn handle_method_not_found(
-    rpc_handler: Arc<RpcHandler>,
+    rpc_client: &RpcClient,
     reqs_validated: &[RpcRequest],
 ) -> Vec<RpcResponse> {
     let mut resps = Vec::new();
@@ -50,7 +50,7 @@ pub async fn handle_method_not_found(
         let req = rpc_client::RpcRequest::Batch(chunk);
 
         // TODO: actually handle error
-        let r = rpc_handler.rpc_client.send(req).await.unwrap();
+        let r = rpc_client.send(req).await.unwrap();
 
         let r: Vec<serde_json::Value> = r.try_into().unwrap();
 
