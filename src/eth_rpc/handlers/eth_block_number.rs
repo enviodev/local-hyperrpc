@@ -8,12 +8,11 @@ pub async fn handle(rpc_handler: Arc<RpcHandler>, reqs: &Vec<RpcRequest>) -> Vec
         Ok(skar_height) => {
             let rpc_height = rpc_handler.rpc_client.last_block().await;
             Ok(Some(cmp::min(skar_height, rpc_height)))
-            }
-        Err(e) => Err(e)
+        }
+        Err(e) => Err(e),
     };
 
-    let latest_block = match resolve_latest_block(&height)
-    {
+    let latest_block = match resolve_latest_block(&height) {
         Ok(block) => block,
         Err(rpc_error) => {
             for i in reqs {

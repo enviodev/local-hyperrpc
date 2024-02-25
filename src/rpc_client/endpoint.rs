@@ -18,15 +18,12 @@ pub struct Endpoint {
     url: Arc<Url>,
     last_block: Arc<RwLock<Option<BlockNumber>>>,
     job_tx: mpsc::Sender<Job>,
-    label: String,
 }
 
 impl Endpoint {
     pub fn new(http_client: reqwest::Client, config: EndpointConfig) -> Self {
         let last_block = Arc::new(RwLock::new(None));
         let url = Arc::new(config.url);
-        // Make label default to the url if not specified
-        let label = config.label.unwrap_or_else(|| url.to_string());
         let bearer_token = config.bearer_token.map(Arc::new);
 
         tokio::spawn(
@@ -35,7 +32,6 @@ impl Endpoint {
                 last_block: last_block.clone(),
                 status_refresh_interval_secs: config.status_refresh_interval_secs,
                 url: url.clone(),
-                label: label.clone(),
                 bearer_token: bearer_token.clone(),
             }
             .watch(),
@@ -60,7 +56,6 @@ impl Endpoint {
             url,
             last_block,
             job_tx,
-            label,
         }
     }
 
@@ -122,7 +117,6 @@ impl Endpoint {
 
 struct WatchHealth {
     url: Arc<Url>,
-    label: String,
     bearer_token: Option<Arc<String>>,
     http_client: reqwest::Client,
     last_block: Arc<RwLock<Option<BlockNumber>>>,
@@ -303,24 +297,5 @@ impl SendRpcRequest {
                 Err(Error::InvalidRPCResponse(e))
             }
         }
-    }
-}
-
-fn method_name(req: &RpcRequest) -> Option<String> {
-    match req {
-        RpcRequest::Batch(reqs) => reqs.first().map(|req| method_name_single(req).to_owned()),
-        RpcRequest::Single(req) => Some(method_name_single(req).to_owned()),
-    }
-}
-
-fn method_name_single(req: &RpcRequestImpl) -> &'static str {
-    match req {
-        RpcRequestImpl::GetBlockNumber => "eth_getBlockNumber",
-        RpcRequestImpl::GetBlockByNumber(_) => "eth_getBlockByNumber",
-        RpcRequestImpl::GetTransactionReceipt(_, _) => "eth_getTransactionReceipt",
-        RpcRequestImpl::GetBlockReceipts(_) => "eth_getBlockReceipts",
-        RpcRequestImpl::TraceBlock(_) => "trace_block",
-        // TODO: map this to correct method using method field
-        RpcRequestImpl::Proxy { .. } => "proxy",
     }
 }

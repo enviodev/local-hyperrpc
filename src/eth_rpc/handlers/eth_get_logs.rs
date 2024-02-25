@@ -1,17 +1,8 @@
-use std::time::Instant;
-
-use crate::types::elapsed;
-
 use super::*;
 
-pub async fn handle(
-    rpc_handler: Arc<RpcHandler>,
-    reqs: &Vec<RpcRequest>,
-) -> (Vec<RpcResponse>, QueryMetrics) {
+pub async fn handle(rpc_handler: Arc<RpcHandler>, reqs: &Vec<RpcRequest>) -> Vec<RpcResponse> {
     let mut rpc_responses = Vec::new();
-    let mut metrics = QueryMetrics::default();
 
-    let start = Instant::now();
     // parse params
     let mut block_ranges: Vec<BlockRange> = Vec::new();
     let mut log_filter_data_with_req_ids_validated: Vec<LogFilterDataWithReqId> = Vec::new();
@@ -24,7 +15,7 @@ pub async fn handle(
             }
         };
 
-        let log_filter = match params.parse_into_log_filter(&rpc_handler) {
+        let log_filter = match params.parse_into_log_filter(&rpc_handler).await {
             Ok(log_filter) => log_filter,
             Err(rpc_error) => {
                 rpc_responses.push(rpc_error.to_response(&req.id));
@@ -36,16 +27,14 @@ pub async fn handle(
         // we just want this struct for composability
         let mimic = LogFilterDataWithReqId {
             log_filter: log_filter.clone(),
-            filter_id: FilterId::default(),
             req_id: req.id,
         };
         log_filter_data_with_req_ids_validated.push(mimic);
         block_ranges.push(BlockRange(log_filter.from_block, log_filter.to_block));
     }
-    metrics.query_prepare_time += elapsed(&start);
 
-    let (successful_request_info, logs_tree, metrics0) = concurrent_batch_skar_log_query(
-        rpc_handler.state.clone(),
+    let (successful_request_info, logs_tree) = concurrent_batch_skar_log_query(
+        rpc_handler.skar_client.clone(),
         rpc_handler.max_logs_returned_per_request,
         rpc_handler.max_get_logs_block_range,
         log_filter_data_with_req_ids_validated,
@@ -53,10 +42,6 @@ pub async fn handle(
         &mut rpc_responses,
     )
     .await;
-
-    metrics += metrics0;
-
-    let start = Instant::now();
 
     for log_filter_data_with_req_id in successful_request_info {
         // let log_filter = log_filter_with_req_id.log_filter;
@@ -76,7 +61,6 @@ pub async fn handle(
             &rpc_handler.rpc_version,
         );
     }
-    metrics.response_encode_time += elapsed(&start);
 
-    (rpc_responses, metrics)
+    rpc_responses
 }

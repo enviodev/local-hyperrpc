@@ -15,4 +15,3 @@ impl Args {
 fn default_config_path() -> String {
     "hyperrpc.toml".to_owned()
 }
-

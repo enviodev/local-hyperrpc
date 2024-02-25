@@ -1,17 +1,9 @@
-use crate::{eth_rpc::types::RpcResult, types::elapsed};
-
-use std::time::Instant;
+use crate::eth_rpc::types::RpcResult;
 
 use super::*;
 
-pub async fn handle(
-    rpc_handler: Arc<RpcHandler>,
-    reqs: &Vec<RpcRequest>,
-) -> (Vec<RpcResponse>, QueryMetrics) {
+pub async fn handle(rpc_handler: Arc<RpcHandler>, reqs: &Vec<RpcRequest>) -> Vec<RpcResponse> {
     let mut rpc_responses: Vec<RpcResponse> = Vec::new();
-    let mut metrics = QueryMetrics::default();
-
-    let start = Instant::now();
 
     // parse params
     let mut from_blocks: Vec<u64> = Vec::new();
@@ -27,8 +19,10 @@ pub async fn handle(
                 }
             };
 
-        let from_block = match resolve_block_number(Some(block_number), &rpc_handler.state.height())
-        {
+        let from_block = match resolve_block_number(
+            Some(block_number),
+            &rpc_handler.skar_client.get_height().await.map(Some),
+        ) {
             Ok(from_block) => from_block,
             Err(rpc_error) => {
                 rpc_responses.push(rpc_error.to_response(&req.id));
@@ -43,24 +37,19 @@ pub async fn handle(
     // optimize query
     let query_ranges =
         optimize_query_for_single_block_request(from_blocks, rpc_handler.max_block_gap);
-    metrics.query_prepare_time += elapsed(&start);
 
     // execute query
-    let (res_blocks, metrics0) =
-        match execute_query_for_block_txns(rpc_handler.state.clone(), query_ranges).await {
+    let res_blocks =
+        match execute_query_for_block_txns(rpc_handler.query_handler.clone(), query_ranges).await {
             Ok(res) => res,
             Err(rpc_err) => {
                 for (req_id, _, _) in req_ids_with_block_num_and_tx_idx {
                     let response = rpc_err.to_response(&req_id);
                     rpc_responses.push(response);
                 }
-                return (rpc_responses, metrics);
+                return rpc_responses;
             }
         };
-
-    metrics += metrics0;
-
-    let start = Instant::now();
 
     for (req_id, from_block, tx_index) in req_ids_with_block_num_and_tx_idx {
         let rpc_result = extract_rpc_result(&res_blocks, from_block, tx_index);
@@ -72,9 +61,7 @@ pub async fn handle(
         ));
     }
 
-    metrics.response_encode_time += elapsed(&start);
-
-    (rpc_responses, metrics)
+    rpc_responses
 }
 
 fn extract_rpc_result(

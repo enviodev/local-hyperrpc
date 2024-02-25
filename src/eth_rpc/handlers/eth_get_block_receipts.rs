@@ -1,19 +1,9 @@
-use crate::types::elapsed;
-
-use std::time::Instant;
-
 use super::*;
 
-pub async fn handle(
-    rpc_handler: Arc<RpcHandler>,
-    reqs: &Vec<RpcRequest>,
-) -> (Vec<RpcResponse>, QueryMetrics) {
+pub async fn handle(rpc_handler: Arc<RpcHandler>, reqs: &Vec<RpcRequest>) -> Vec<RpcResponse> {
     let rpc_version = &rpc_handler.rpc_version;
     let mut rpc_responses = Vec::new();
 
-    let mut metrics = QueryMetrics::default();
-
-    let start = Instant::now();
     let mut from_blocks: Vec<u64> = Vec::new();
     let mut req_ids_with_blocks: Vec<(i64, u64)> = Vec::new();
     for req in reqs {
@@ -25,8 +15,10 @@ pub async fn handle(
             }
         };
 
-        let from_block = match resolve_block_number(Some(block_number), &rpc_handler.state.height())
-        {
+        let from_block = match resolve_block_number(
+            Some(block_number),
+            &rpc_handler.skar_client.get_height().await.map(Some),
+        ) {
             Ok(from_block) => from_block,
             Err(rpc_error) => {
                 rpc_responses.push(rpc_error.to_response(&req.id));
@@ -42,23 +34,21 @@ pub async fn handle(
     let query_ranges =
         optimize_query_for_single_block_request(from_blocks, rpc_handler.max_block_gap);
 
-    metrics.query_prepare_time += elapsed(&start);
-
     // execute queries
-    let (receipts, metrics0) =
-        match execute_query_for_block_receipts(rpc_handler.state.clone(), query_ranges).await {
+    let receipts =
+        match execute_query_for_block_receipts(rpc_handler.query_handler.clone(), query_ranges)
+            .await
+        {
             Ok(receipts) => receipts,
             Err(rpc_error) => {
                 for (req_id, _) in req_ids_with_blocks {
                     let response = rpc_error.to_response(&req_id);
                     rpc_responses.push(response);
                 }
-                return (rpc_responses, metrics);
+                return rpc_responses;
             }
         };
-    metrics += metrics0;
 
-    let start = Instant::now();
     // combine inner BTreeMap on blockNumber
     let mut res_receipts_by_block: BTreeMap<u64, Vec<TransactionReceipt>> = BTreeMap::new();
     for ((block_number, _), receipt) in receipts {
@@ -76,7 +66,6 @@ pub async fn handle(
 
         rpc_responses.push(RpcResponse::new(req_id, rpc_version, rpc_result));
     }
-    metrics.response_encode_time += elapsed(&start);
 
-    (rpc_responses, metrics)
+    rpc_responses
 }

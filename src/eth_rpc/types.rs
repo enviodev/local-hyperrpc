@@ -3,13 +3,11 @@ use arrayvec::ArrayVec;
 use serde::de::{self, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use skar_format::{
-    Address, Block, BlockNumber, FixedSizeData, Hash, Log, LogArgument, Transaction,
-    TransactionReceipt,
+    Address, Block, BlockNumber, Hash, Log, LogArgument, Transaction, TransactionReceipt,
 };
 use skar_net_types::LogSelection;
 use std::fmt;
 use std::str::FromStr;
-use std::sync::Arc;
 
 use super::error::{RpcError, RpcErrorCode};
 use super::handlers::resolve_block_number;
@@ -92,7 +90,7 @@ impl FilterParams {
             .context("get height")
             .map(Some);
 
-        let (from_block, to_block) = if let Some(block_hash) = self.block_hash {
+        let (from_block, to_block) = if self.block_hash.is_some() {
             return Err(RpcError::InvalidParams(
                 "Blockhash not implemented yet".into(),
             ));
@@ -162,7 +160,6 @@ pub enum RpcResponseData {
     SingleReceipt(Option<TransactionReceipt>),
     BlockNumber(Option<BlockNumber>),
     Transaction(Option<Transaction>),
-    FilterId(FilterId),
     UninstallFilter(bool),
     Proxy(serde_json::Value),
 }
@@ -186,4 +183,8 @@ pub struct LogFilter {
     pub to_block: u64,
 }
 
-pub type FilterId = FixedSizeData<16>;
+#[derive(Debug, Clone)]
+pub struct LogFilterDataWithReqId {
+    pub log_filter: LogFilter,
+    pub req_id: i64,
+}

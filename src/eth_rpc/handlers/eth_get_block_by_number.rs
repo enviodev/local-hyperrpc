@@ -1,16 +1,8 @@
-use std::time::Instant;
-
-use crate::types::elapsed;
-
 use super::*;
 
-pub async fn handle(
-    rpc_handler: Arc<RpcHandler>,
-    reqs: &[RpcRequest],
-) -> Vec<RpcResponse> {
-    let mut rpc_responses = Vec::new();    
+pub async fn handle(rpc_handler: Arc<RpcHandler>, reqs: &[RpcRequest]) -> Vec<RpcResponse> {
+    let mut rpc_responses = Vec::new();
 
-    let start = Instant::now();
     // parse params
     let mut from_blocks_for_txns: Vec<u64> = Vec::new();
     let mut from_blocks_for_headers: Vec<u64> = Vec::new();
@@ -25,8 +17,10 @@ pub async fn handle(
                 }
             };
 
-        let from_block = match resolve_block_number(Some(block_number), &rpc_handler.state.height())
-        {
+        let from_block = match resolve_block_number(
+            Some(block_number),
+            &rpc_handler.skar_client.get_height().await.map(Some),
+        ) {
             Ok(from_block) => from_block,
             Err(rpc_error) => {
                 rpc_responses.push(rpc_error.to_response(&req.id));
@@ -49,29 +43,28 @@ pub async fn handle(
     let query_ranges_for_headers =
         optimize_query_for_single_block_request(from_blocks_for_headers, rpc_handler.max_block_gap);
 
-
     // execute skar query
     let res_block_txns =
-        execute_query_for_block_txns(rpc_handler.skar_client.clone(), query_ranges_for_txns).await;
-    let res_block_headers =
-        execute_query_for_block_headers(rpc_handler.skar_client.clone(), query_ranges_for_headers).await;
+        execute_query_for_block_txns(rpc_handler.query_handler.clone(), query_ranges_for_txns)
+            .await;
+    let res_block_headers = execute_query_for_block_headers(
+        rpc_handler.query_handler.clone(),
+        query_ranges_for_headers,
+    )
+    .await;
 
     // if there are any errors, return rpc_responses
-    let ((block_txns, metrics0), (block_headers, metrics1)) =
-        match (res_block_txns, res_block_headers) {
-            (Err(rpc_err), _) | (_, Err(rpc_err)) => {
-                for (req_id, _, _) in req_ids_with_params {
-                    let rpc_response = rpc_err.to_response(&req_id);
-                    rpc_responses.push(rpc_response);
-                }
-                return (rpc_responses, metrics);
+    let (block_txns, block_headers) = match (res_block_txns, res_block_headers) {
+        (Err(rpc_err), _) | (_, Err(rpc_err)) => {
+            for (req_id, _, _) in req_ids_with_params {
+                let rpc_response = rpc_err.to_response(&req_id);
+                rpc_responses.push(rpc_response);
             }
-            (Ok(block_txns), Ok(block_headers)) => (block_txns, block_headers),
-        };
+            return rpc_responses;
+        }
+        (Ok(block_txns), Ok(block_headers)) => (block_txns, block_headers),
+    };
 
-    metrics += metrics0 + metrics1;
-
-    let start = Instant::now();
     // build responses
     for (req_id, from_block, full_txn) in req_ids_with_params {
         let rpc_result = if full_txn {
@@ -102,7 +95,6 @@ pub async fn handle(
             rpc_result,
         ));
     }
-    metrics.response_encode_time += elapsed(&start);
 
-    (rpc_responses, metrics)
+    rpc_responses
 }

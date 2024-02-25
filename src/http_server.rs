@@ -22,31 +22,30 @@ pub struct State {
 }
 
 impl HttpServer {
-    pub async fn run(rpc_handler: Arc<RpcHandler>, cfg: HttpServerConfig) -> Result<(), anyhow::Error> {
-
+    pub async fn run(
+        rpc_handler: Arc<RpcHandler>,
+        cfg: HttpServerConfig,
+    ) -> Result<(), anyhow::Error> {
         let addr = cfg.addr;
 
         let state = Arc::new(State { rpc_handler, cfg });
 
-        let app = axum::Router::new()
-    
-        
-        .route(
+        let app = axum::Router::new().route(
             "/",
             axum::routing::post(run_rpc_query).with_state(state.clone()),
-        )
-        ;
+        );
 
-    let listener = tokio::net::TcpListener::bind(&addr)
-        .await
-        .context("bind listener")?;
+        let listener = tokio::net::TcpListener::bind(&addr)
+            .await
+            .context("bind listener")?;
 
-        axum::serve(listener, app).await.context("run http server")?;
+        axum::serve(listener, app)
+            .await
+            .context("run http server")?;
 
         Ok(())
     }
 }
-
 
 // Make our own error that wraps `anyhow::Error`.
 pub struct AppError(anyhow::Error);
@@ -73,13 +72,10 @@ where
     }
 }
 
-
 pub async fn run_rpc_query(
     AxumState(state): AxumState<Arc<State>>,
     AxumJson(request): AxumJson<serde_json::Value>,
 ) -> Result<Response, AppError> {
-    
-
     let rpc_handler = state.rpc_handler.clone();
 
     let mut rpc_responses: Vec<RpcResponse> = Vec::new();
@@ -101,12 +97,11 @@ pub async fn run_rpc_query(
 
     // execute the rpc requests for each method
 
-
     for (method, reqs) in &requests_by_method {
         let rpc_handler = rpc_handler.clone();
-        let responses = rpc_handler.execute_rpc_method(method, reqs).await;        
+        let responses = rpc_handler.execute_rpc_method(method, reqs).await;
 
-        for response in responses {            
+        for response in responses {
             rpc_responses.push(response);
         }
     }
@@ -119,7 +114,6 @@ pub async fn run_rpc_query(
         rpc_handler.max_payload_size_in_mb,
         batch_flag,
     );
-
 
     let body = Body::from_stream(futures::stream::iter(
         serialized_response.into_iter().map(Ok::<_, std::io::Error>),
@@ -134,7 +128,6 @@ pub async fn run_rpc_query(
             .try_into()
             .context("Inserting content into response")?,
     );
-
 
     Ok(response)
 }
@@ -161,7 +154,6 @@ fn serialize_response(
         serialized_response
     }
 }
-
 
 fn deserialize_req(request: serde_json::Value) -> (Vec<RpcRequestErrorCheck>, bool) {
     match request {

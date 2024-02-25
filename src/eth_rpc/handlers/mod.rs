@@ -1,19 +1,22 @@
+use crate::query_handler::from_arrow::batch_to_logs;
+use crate::query_handler::QueryHandler;
 use crate::rpc_client::{self, RpcRequestImpl};
+use crate::BlockRange;
 
 use super::error::RpcError;
 use super::types::{
-    BlockVariant, FilterParams, RpcBlockNumber, RpcRequest, RpcResponse, RpcResponseData,
+    BlockVariant, FilterParams, LogFilterDataWithReqId, RpcBlockNumber, RpcRequest, RpcResponse,
+    RpcResponseData,
 };
 use super::RpcHandler;
 use anyhow::Result;
-use serde::{Deserialize, Serialize};
 
 use arrayvec::ArrayVec;
 use futures::{Future, StreamExt};
 use skar_net_types::FieldSelection;
 use skar_net_types::LogSelection;
 use skar_net_types::Query;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Error};
@@ -21,22 +24,11 @@ use anyhow::{anyhow, Context, Error};
 use skar_format::{Block, BlockNumber, Hash, Log, LogArgument, Transaction, TransactionReceipt};
 
 pub mod eth_block_number;
-// pub mod eth_chain_id;
-// pub mod eth_get_block_by_hash;
+pub mod eth_chain_id;
 pub mod eth_get_block_by_number;
-// pub mod eth_get_block_receipts;
-// pub mod eth_get_filter_changes;
-// pub mod eth_get_filter_logs;
-// pub mod eth_get_logs;
-// pub mod eth_get_transaction_by_block_hash_and_index;
-// pub mod eth_get_transaction_by_block_number_and_index;
-// pub mod eth_get_transaction_by_hash;
-// pub mod eth_get_transaction_receipt;
-// pub mod eth_new_filter;
-// pub mod eth_uninstall_filter;
-
-#[derive(Clone, Copy, Debug)]
-pub struct BlockRange(u64, u64);
+pub mod eth_get_block_receipts;
+pub mod eth_get_logs;
+pub mod eth_get_transaction_by_block_number_and_index;
 
 // various helper and shared methods
 
@@ -65,11 +57,15 @@ pub async fn handle_method_not_found(
         resps.extend_from_slice(&r);
     }
 
-    resps.into_iter().zip(reqs_validated.iter()).map(|(res, req)| RpcResponse {
-        id: req.id,
-        jsonrpc: req.jsonrpc.clone(),
-        result: Ok(RpcResponseData::Proxy(res)),
-    }).collect()
+    resps
+        .into_iter()
+        .zip(reqs_validated.iter())
+        .map(|(res, req)| RpcResponse {
+            id: req.id,
+            jsonrpc: req.jsonrpc.clone(),
+            result: Ok(RpcResponseData::Proxy(res)),
+        })
+        .collect()
 }
 
 fn select_logs(logs: &[Log], selection: LogSelection) -> Vec<Log> {
@@ -133,135 +129,122 @@ fn trim_log_tree_into_response(
     rpc_responses.push(rpc_response);
 }
 
-// async fn single_skar_log_query(
-//     state: Arc<State>,
-//     max_logs_per_request: usize,
-//     log_selection: LogSelection,
-//     block_range: BlockRange,
-// ) -> anyhow::Result<(Vec<Log>, QueryMetrics)> {
-//     let log_field_selection = FieldSelection {
-//         log: skar_schema::log()
-//             .fields
-//             .iter()
-//             .map(|field| field.name.clone())
-//             .collect(),
-//         ..Default::default()
-//     };
+async fn single_skar_log_query(
+    client: skar_client::Client,
+    max_logs_per_request: usize,
+    log_selection: LogSelection,
+    block_range: BlockRange,
+) -> anyhow::Result<Vec<Log>> {
+    let log_field_selection = FieldSelection {
+        log: skar_schema::log()
+            .fields
+            .iter()
+            .map(|field| field.name.clone())
+            .collect(),
+        ..Default::default()
+    };
 
-//     let query = Query {
-//         from_block: block_range.0,
-//         // +1 since skar query is exclusive
-//         to_block: Some(block_range.1 + 1),
-//         logs: vec![log_selection],
-//         field_selection: log_field_selection,
-//         max_num_logs: Some(max_logs_per_request),
-//         ..Default::default()
-//     };
+    let query = Query {
+        from_block: block_range.0,
+        // +1 since skar query is exclusive
+        to_block: Some(block_range.1 + 1),
+        logs: vec![log_selection],
+        field_selection: log_field_selection,
+        max_num_logs: Some(max_logs_per_request),
+        ..Default::default()
+    };
 
-//     let mut iter = state.query(query, None)?;
+    let query_res = client
+        .send::<skar_client::ArrowIpc>(&query)
+        .await
+        .context("send skar query")?;
 
-//     let mut num_logs_returned = 0;
-//     let mut last_next_block = 0;
-//     let mut logs_res: Vec<Log> = Vec::new();
-//     let mut metrics = QueryMetrics::default();
-//     while let Some(query_res) = iter.recv().await {
-//         let query_res = query_res.context("iterating over skar query log results")?;
-//         last_next_block = query_res.next_block;
+    let mut num_logs_returned = 0;
+    let mut logs_res: Vec<Log> = Vec::new();
+    for arrow_batch in query_res.data.logs {
+        for log in batch_to_logs(&arrow_batch).context("arrow data to logs")? {
+            if num_logs_returned >= max_logs_per_request {
+                return Err(anyhow!(format!(
+                    "More than {} logs returned",
+                    max_logs_per_request
+                )));
+            }
+            logs_res.push(log);
+            num_logs_returned += 1;
+        }
+    }
 
-//         metrics += query_res.metrics;
+    // make sure on the final query result that the next_block is the `to_block` that I initially passed in
+    // otherwise the skar query timed out
+    if query_res.next_block < block_range.1 && query_res.next_block != 0 {
+        return Err(anyhow!("Query timed out"));
+    }
 
-//         for arrow_batch in query_res.data.logs {
-//             for log in batch_to_logs(&arrow_batch).context("arrow data to logs")? {
-//                 if num_logs_returned >= max_logs_per_request {
-//                     drop(iter);
-//                     return Err(anyhow!(format!(
-//                         "More than {} logs returned",
-//                         max_logs_per_request
-//                     )));
-//                 }
-//                 logs_res.push(log);
-//                 num_logs_returned += 1;
-//             }
-//         }
-//     }
+    Ok(logs_res)
+}
 
-//     // make sure on the final query result that the next_block is the `to_block` that I initially passed in
-//     // otherwise the skar query timed out
-//     if last_next_block < block_range.1 && last_next_block != 0 {
-//         return Err(anyhow!("Query timed out"));
-//     }
+async fn concurrent_batch_skar_log_query(
+    client: skar_client::Client,
+    max_logs_per_request: usize,
+    max_get_logs_block_range: u64,
+    requested_log_data: Vec<LogFilterDataWithReqId>,
+    requested_block_ranges: Vec<BlockRange>,
+    rpc_responses: &mut Vec<RpcResponse>,
+) -> (Vec<LogFilterDataWithReqId>, BTreeMap<u64, Vec<Log>>) {
+    let mut futures = Vec::new();
 
-//     Ok((logs_res, metrics))
-// }
+    let mut valid_requested_log_data: Vec<LogFilterDataWithReqId> = Vec::new();
+    for (request_data, block_range) in requested_log_data.iter().zip(requested_block_ranges) {
+        if block_range.1 - block_range.0 > max_get_logs_block_range {
+            let rpc_response = RpcError::LimitExceeded(format!(
+                "Requested block range is greater than {}",
+                max_get_logs_block_range
+            ))
+            .to_response(&request_data.req_id);
+            rpc_responses.push(rpc_response);
+        } else {
+            let log_selection = request_data.log_filter.selection.clone();
+            let future = single_skar_log_query(
+                client.clone(),
+                max_logs_per_request,
+                log_selection,
+                block_range,
+            );
+            valid_requested_log_data.push(request_data.clone());
+            futures.push(future);
+        }
+    }
 
-// async fn concurrent_batch_skar_log_query(
-//     state: Arc<State>,
-//     max_logs_per_request: usize,
-//     max_get_logs_block_range: u64,
-//     requested_log_data: Vec<LogFilterDataWithReqId>,
-//     requested_block_ranges: Vec<BlockRange>,
-//     rpc_responses: &mut Vec<RpcResponse>,
-// ) -> (
-//     Vec<LogFilterDataWithReqId>,
-//     BTreeMap<u64, Vec<Log>>,
-//     QueryMetrics,
-// ) {
-//     let mut futures = Vec::new();
+    let mut successful_requested_log_data = Vec::new();
+    let mut logs_tree: BTreeMap<u64, Vec<Log>> = BTreeMap::new();
+    let logs_res = join_buffered(futures.into_iter(), CONCURRENCY).await;
+    for (query_res, requested_data) in logs_res.into_iter().zip(valid_requested_log_data.iter()) {
+        match query_res {
+            Ok(logs) => {
+                // add logs to tree
+                for log in logs {
+                    logs_tree
+                        .entry(*log.block_number)
+                        .or_default()
+                        .push(log.clone());
+                }
+                successful_requested_log_data.push(requested_data.clone());
+            }
+            Err(e) => {
+                if e.to_string().contains("More than") {
+                    rpc_responses.push(
+                        RpcError::LimitExceeded(e.to_string()).to_response(&requested_data.req_id),
+                    )
+                } else {
+                    rpc_responses
+                        .push(RpcError::InternalError(e.into()).to_response(&requested_data.req_id))
+                }
+            }
+        }
+    }
 
-//     let mut valid_requested_log_data: Vec<LogFilterDataWithReqId> = Vec::new();
-//     for (request_data, block_range) in requested_log_data.iter().zip(requested_block_ranges) {
-//         if block_range.1 - block_range.0 > max_get_logs_block_range {
-//             let rpc_response = RpcError::LimitExceeded(format!(
-//                 "Requested block range is greater than {}",
-//                 max_get_logs_block_range
-//             ))
-//             .to_response(&request_data.req_id);
-//             rpc_responses.push(rpc_response);
-//         } else {
-//             let log_selection = request_data.log_filter.selection.clone();
-//             let future = single_skar_log_query(
-//                 state.clone(),
-//                 max_logs_per_request,
-//                 log_selection,
-//                 block_range,
-//             );
-//             valid_requested_log_data.push(request_data.clone());
-//             futures.push(future);
-//         }
-//     }
-
-//     let mut successful_requested_log_data = Vec::new();
-//     let mut logs_tree: BTreeMap<u64, Vec<Log>> = BTreeMap::new();
-//     let mut metrics = QueryMetrics::default();
-//     let logs_res = join_buffered(futures.into_iter(), CONCURRENCY).await;
-//     for (query_res, requested_data) in logs_res.into_iter().zip(valid_requested_log_data.iter()) {
-//         match query_res {
-//             Ok((logs, logs_metrics)) => {
-//                 metrics += logs_metrics;
-//                 // add logs to tree
-//                 for log in logs {
-//                     logs_tree
-//                         .entry(*log.block_number)
-//                         .or_default()
-//                         .push(log.clone());
-//                 }
-//                 successful_requested_log_data.push(requested_data.clone());
-//             }
-//             Err(e) => {
-//                 if e.to_string().contains("More than") {
-//                     rpc_responses.push(
-//                         RpcError::LimitExceeded(e.to_string()).to_response(&requested_data.req_id),
-//                     )
-//                 } else {
-//                     rpc_responses
-//                         .push(RpcError::InternalError(e.into()).to_response(&requested_data.req_id))
-//                 }
-//             }
-//         }
-//     }
-
-//     (successful_requested_log_data, logs_tree, metrics)
-// }
+    (successful_requested_log_data, logs_tree)
+}
 
 pub fn resolve_block_number(
     block_number_param: Option<RpcBlockNumber>,
@@ -334,42 +317,40 @@ fn optimize_query_for_single_block_request(
     query_ranges
 }
 
-// async fn execute_query_for_block_receipts(
-//     state: Arc<State>,
-//     query_ranges: Vec<BlockRange>,
-// ) -> Result<(BTreeMap<(u64, u64), TransactionReceipt>, QueryMetrics), RpcError> {
-//     let mut futures = Vec::new();
+async fn execute_query_for_block_receipts(
+    handler: QueryHandler,
+    query_ranges: Vec<BlockRange>,
+) -> Result<BTreeMap<(u64, u64), TransactionReceipt>, RpcError> {
+    let mut futures = Vec::new();
 
-//     for block_range in query_ranges {
-//         let state = state.clone();
-//         let single_res_receipts = async move { state.get_block_receipts(block_range).await };
-//         futures.push(single_res_receipts);
-//     }
+    for block_range in query_ranges {
+        let handler = handler.clone();
+        let single_res_receipts = async move { handler.get_block_receipts(block_range).await };
+        futures.push(single_res_receipts);
+    }
 
-//     let resp = try_join_buffered(futures.into_iter(), CONCURRENCY)
-//         .await
-//         .map_err(|e: Error| RpcError::InternalError(e.into()))?;
+    let resp = try_join_buffered(futures.into_iter(), CONCURRENCY)
+        .await
+        .map_err(|e: Error| RpcError::InternalError(e.into()))?;
 
-//     let mut metrics = QueryMetrics::default();
-//     let mut resps = BTreeMap::new();
+    let mut resps = BTreeMap::new();
 
-//     for (res, res_metrics) in resp {
-//         metrics += res_metrics;
-//         resps.extend(res);
-//     }
+    for res in resp {
+        resps.extend(res);
+    }
 
-//     Ok((resps, metrics))
-// }
+    Ok(resps)
+}
 
 async fn execute_query_for_block_txns(
-    state: Arc<skar_client::Client>,
+    handler: QueryHandler,
     query_ranges: Vec<BlockRange>,
 ) -> Result<BTreeMap<u64, Block<Transaction>>, RpcError> {
     let mut futures = Vec::new();
     for block_range in query_ranges {
-        let state = state.clone();
+        let handler = handler.clone();
         let single_res_block_with_transaction =
-            async move { state.get_blocks_with_transactions(block_range).await }; 
+            async move { handler.get_blocks_with_transactions(block_range).await };
 
         futures.push(single_res_block_with_transaction);
     }
@@ -380,40 +361,38 @@ async fn execute_query_for_block_txns(
 
     let mut resps = BTreeMap::new();
 
-    for (res, res_metrics) in resp {
-        
+    for res in resp {
         resps.extend(res);
     }
 
     Ok(resps)
 }
 
-// async fn execute_query_for_block_headers(
-//     state: Arc<State>,
-//     query_ranges: Vec<BlockRange>,
-// ) -> Result<(BTreeMap<u64, Block<Hash>>, QueryMetrics), RpcError> {
-//     let mut futures = Vec::new();
-//     for block_range in query_ranges {
-//         let state = state.clone();
-//         let single_res_block_with_transaction = async move { state.get_blocks(block_range).await };
+async fn execute_query_for_block_headers(
+    handler: QueryHandler,
+    query_ranges: Vec<BlockRange>,
+) -> Result<BTreeMap<u64, Block<Hash>>, RpcError> {
+    let mut futures = Vec::new();
+    for block_range in query_ranges {
+        let handler = handler.clone();
+        let single_res_block_with_transaction =
+            async move { handler.get_blocks(block_range).await };
 
-//         futures.push(single_res_block_with_transaction);
-//     }
+        futures.push(single_res_block_with_transaction);
+    }
 
-//     let resp = try_join_buffered(futures.into_iter(), CONCURRENCY)
-//         .await
-//         .map_err(|e| RpcError::InternalError(e.into()))?;
+    let resp = try_join_buffered(futures.into_iter(), CONCURRENCY)
+        .await
+        .map_err(|e| RpcError::InternalError(e.into()))?;
 
-//     let mut metrics = QueryMetrics::default();
-//     let mut resps = BTreeMap::new();
+    let mut resps = BTreeMap::new();
 
-//     for (res, res_metrics) in resp {
-//         metrics += res_metrics;
-//         resps.extend(res);
-//     }
+    for res in resp {
+        resps.extend(res);
+    }
 
-//     Ok((resps, metrics))
-// }
+    Ok(resps)
+}
 
 const CONCURRENCY: usize = 4;
 
