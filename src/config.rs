@@ -18,6 +18,9 @@ pub struct HttpServerConfig {
 pub struct EthRpcConfig {
     /// Url to hyperrpc
     pub hyperrpc_url: String,
+    /// if hyperrpc endpoint is stateful
+    #[serde(default)]
+    pub hyperrpc_is_stateful: bool,
     ///  Maximum number of requests in a batch request
     #[serde(default = "default_max_requests_in_batch")]
     pub max_requests_in_batch: usize,

@@ -23,6 +23,7 @@ pub struct RpcHandler {
     pub query_handler: QueryHandler,
     pub rpc_client: RpcClient,
     pub hyperrpc_client: RpcClient,
+    pub hyperrpc_is_stateful: bool,
     pub rpc_version: String,
     pub chain_id: u64,
     pub max_block_gap: u64,
@@ -50,6 +51,7 @@ impl RpcHandler {
             query_handler,
             rpc_client,
             hyperrpc_client,
+            hyperrpc_is_stateful: rpc_cfg.hyperrpc_is_stateful,
             rpc_version: rpc_cfg.json_rpc_version,
             chain_id: rpc_cfg.rpc_chain_id,
             max_block_gap: rpc_cfg.max_block_gap,
@@ -66,6 +68,14 @@ impl RpcHandler {
         reqs: &Vec<RpcRequest>,
     ) -> Vec<RpcResponse> {
         match method {
+            "eth_newFilter"
+            | "eth_getFilterLogs"
+            | "eth_getFilterChanges"
+            | "eth_uninstallFilter"
+                if self.hyperrpc_is_stateful =>
+            {
+                handlers::handle_method_not_found(&self.hyperrpc_client, reqs).await
+            }
             "eth_getTransactionByBlockHashAndIndex"
             | "eth_getTransactionByHash"
             | "eth_getBlockByHash"
