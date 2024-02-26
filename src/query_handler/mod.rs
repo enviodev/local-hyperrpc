@@ -104,7 +104,7 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
-        tokio::time::sleep(Duration::from_millis((block_range.0 % 10) * 100)).await;
+        tokio::time::sleep(Duration::from_millis((block_range.0 % 100) * 10)).await;
 
         {
             let locks = self.locks.lock().await;
