@@ -29,6 +29,7 @@ rand = "0.8"
 fastrange-rs = "0.1"
 simd-json = "0.13.4"
 arrow2 = { version = "0.18" }
+moka = { version = "0.12.5", features = ["sync"] }
 
 [dependencies.reqwest]
 version = "0.11"
