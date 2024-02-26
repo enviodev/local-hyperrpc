@@ -43,6 +43,12 @@ pub struct EthRpcConfig {
     pub json_rpc_version: String,
     //  temp for chain_id
     pub rpc_chain_id: u64,
+    #[serde(default = "default_read_ahead")]
+    pub read_ahead: u64,
+}
+
+fn default_read_ahead() -> u64 {
+    100
 }
 
 fn default_max_requests_in_batch() -> usize {

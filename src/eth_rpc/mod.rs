@@ -51,7 +51,7 @@ impl RpcHandler {
         let hyperrpc_client = RpcClient::new("HyperRPC".to_owned(), rpc_cfg.hyperrpc_url)
             .context("create hyperrpc client")?;
 
-        let query_handler = QueryHandler::new(skar_client.clone());
+        let query_handler = QueryHandler::new(skar_client.clone(), rpc_cfg.read_ahead);
 
         Ok(RpcHandler {
             skar_client,

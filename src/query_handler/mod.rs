@@ -20,14 +20,16 @@ pub struct QueryHandler {
     client: skar_client::Client,
     blocks_cache: Cache<u64, Block<Hash>>,
     blocks_with_txs_cache: Cache<u64, Block<Transaction>>,
+    read_ahead: u64,
 }
 
 impl QueryHandler {
-    pub fn new(client: skar_client::Client) -> Self {
+    pub fn new(client: skar_client::Client, read_ahead: u64) -> Self {
         Self {
             client,
             blocks_with_txs_cache: Cache::new(100_000),
             blocks_cache: Cache::new(100_000),
+            read_ahead,
         }
     }
 
@@ -53,7 +55,10 @@ impl QueryHandler {
         let height = self.client.get_height().await.context("get height")?;
         let req_range = BlockRange(
             block_num,
-            std::cmp::min(height + 1, std::cmp::max(block_range.1, block_range.0 + 50)),
+            std::cmp::min(
+                height + 1,
+                std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
+            ),
         );
 
         let res = self
@@ -117,7 +122,10 @@ impl QueryHandler {
         let height = self.client.get_height().await.context("get height")?;
         let req_range = BlockRange(
             block_num,
-            std::cmp::min(height + 1, std::cmp::max(block_range.1, block_range.0 + 50)),
+            std::cmp::min(
+                height + 1,
+                std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
+            ),
         );
 
         let res = self
