@@ -3,9 +3,9 @@ use std::sync::Arc;
 use anyhow::{Context, Result};
 
 use crate::config::EthRpcConfig;
+use crate::query_handler::QueryHandler;
 use crate::rpc_client::RpcClient;
 
-use self::handlers::{eth_block_number, eth_get_block_by_number, handle_method_not_found};
 use self::types::{RpcRequest, RpcResponse};
 
 use skar_client::Client as SkarClient;
@@ -20,7 +20,10 @@ pub mod error;
 
 pub struct RpcHandler {
     pub skar_client: SkarClient,
+    pub query_handler: QueryHandler,
     pub rpc_client: RpcClient,
+    pub hyperrpc_client: RpcClient,
+    pub hyperrpc_is_stateful: bool,
     pub rpc_version: String,
     pub chain_id: u64,
     pub max_block_gap: u64,
@@ -32,9 +35,23 @@ pub struct RpcHandler {
 
 impl RpcHandler {
     pub fn new(skar_client: SkarClient, rpc_cfg: EthRpcConfig) -> Result<Self> {
+        let mesc_cfg = mesc::get_endpoint_by_network(rpc_cfg.rpc_chain_id, None)
+            .context("load mesc config")?
+            .context("endpoint for this chain not found")?;
+        let rpc_client =
+            RpcClient::new(mesc_cfg.name, mesc_cfg.url).context("create rpc client")?;
+
+        let hyperrpc_client = RpcClient::new("HyperRPC".to_owned(), rpc_cfg.hyperrpc_url)
+            .context("create hyperrpc client")?;
+
+        let query_handler = QueryHandler::new(skar_client.clone());
+
         Ok(RpcHandler {
             skar_client,
-            rpc_client: RpcClient::new(rpc_cfg.rpc_chain_id).context("create rpc client")?,
+            query_handler,
+            rpc_client,
+            hyperrpc_client,
+            hyperrpc_is_stateful: rpc_cfg.hyperrpc_is_stateful,
             rpc_version: rpc_cfg.json_rpc_version,
             chain_id: rpc_cfg.rpc_chain_id,
             max_block_gap: rpc_cfg.max_block_gap,
@@ -51,25 +68,29 @@ impl RpcHandler {
         reqs: &Vec<RpcRequest>,
     ) -> Vec<RpcResponse> {
         match method {
-            "eth_getBlockByNumber" => eth_get_block_by_number::handle(self, reqs).await,
-            // "eth_getTransactionByBlockNumberAndIndex" => {
-            //     eth_get_transaction_by_block_number_and_index::handle(self, reqs).await
-            // }
-            // "eth_getTransactionByBlockHashAndIndex" => {
-            //     eth_get_transaction_by_block_hash_and_index::handle(self, reqs).await
-            // }
-            // "eth_getTransactionByHash" => eth_get_transaction_by_hash::handle(self, reqs).await,
-            // "eth_getBlockByHash" => eth_get_block_by_hash::handle(self, reqs).await,
-            // "eth_getTransactionReceipt" => eth_get_transaction_receipt::handle(self, reqs).await,
-            // "eth_getBlockReceipts" => eth_get_block_receipts::handle(self, reqs).await,
-            // "eth_getLogs" => eth_get_logs::handle(self, reqs).await,
-            // "eth_newFilter" => eth_new_filter::handle(self, reqs).await,
-            // "eth_getFilterLogs" => eth_get_filter_logs::handle(self, reqs).await,
-            // "eth_getFilterChanges" => eth_get_filter_changes::handle(self, reqs).await,
-            // "eth_uninstallFilter" => eth_uninstall_filter::handle(self, reqs),
-            "eth_blockNumber" => eth_block_number::handle(self, reqs).await,
-            // "eth_chainId" => eth_chain_id::handle(self, reqs),
-            _ => handle_method_not_found(self, reqs).await,
+            "eth_newFilter"
+            | "eth_getFilterLogs"
+            | "eth_getFilterChanges"
+            | "eth_uninstallFilter"
+                if self.hyperrpc_is_stateful =>
+            {
+                handlers::handle_method_not_found(&self.hyperrpc_client, reqs).await
+            }
+            "eth_getTransactionByBlockHashAndIndex"
+            | "eth_getTransactionByHash"
+            | "eth_getBlockByHash"
+            | "eth_getTransactionReceipt" => {
+                handlers::handle_method_not_found(&self.hyperrpc_client, reqs).await
+            }
+            "eth_getBlockByNumber" => handlers::eth_get_block_by_number::handle(self, reqs).await,
+            "eth_getTransactionByBlockNumberAndIndex" => {
+                handlers::eth_get_transaction_by_block_number_and_index::handle(self, reqs).await
+            }
+            "eth_getBlockReceipts" => handlers::eth_get_block_receipts::handle(self, reqs).await,
+            "eth_getLogs" => handlers::eth_get_logs::handle(self, reqs).await,
+            "eth_blockNumber" => handlers::eth_block_number::handle(self, reqs).await,
+            "eth_chainId" => handlers::eth_chain_id::handle(self, reqs),
+            _ => handlers::handle_method_not_found(&self.rpc_client, reqs).await,
         }
     }
 }

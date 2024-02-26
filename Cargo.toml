@@ -28,6 +28,7 @@ url = { version = "2", features = ["serde"] }
 rand = "0.8"
 fastrange-rs = "0.1"
 simd-json = "0.13.4"
+arrow2 = { version = "0.18" }
 
 [dependencies.reqwest]
 version = "0.11"

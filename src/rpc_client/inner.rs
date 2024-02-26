@@ -2,18 +2,18 @@ use anyhow::Context;
 use tokio::time::sleep;
 
 use super::LimitConfig;
-use super::{endpoint::Endpoint, Error, Result, RpcRequest, RpcResponse, EndpointConfig};
+use super::{endpoint::Endpoint, EndpointConfig, Error, Result, RpcRequest, RpcResponse};
 use std::cmp;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::sync::Arc;
 use std::time::Duration;
-use std::num::{NonZeroU64, NonZeroUsize};
 
 pub struct RpcClient {
     endpoints: Vec<Endpoint>,
 }
 
 impl RpcClient {
-    pub fn new(chain_id: u64) -> anyhow::Result<Self> {
+    pub fn new(name: String, url: String) -> anyhow::Result<Self> {
         let http_client = reqwest::Client::builder()
             .gzip(true)
             .http1_only()
@@ -22,13 +22,10 @@ impl RpcClient {
             .build()
             .unwrap();
 
-        let cfg = mesc::get_endpoint_by_network(chain_id, None)
-            .context("load mesc config")?
-            .context("endpoint for this chain not found")?;
-
-        let endpoints = vec![
-            Endpoint::new(http_client, EndpointConfig {
-                url: cfg.url.parse().context("parse url")?,
+        let endpoints = vec![Endpoint::new(
+            http_client,
+            EndpointConfig {
+                url: url.parse().context("parse url")?,
                 bearer_token: None,
                 status_refresh_interval_secs: NonZeroU64::new(1).unwrap(),
                 limit: LimitConfig {
@@ -36,10 +33,10 @@ impl RpcClient {
                     req_limit_window_ms: NonZeroU64::new(1000).unwrap(),
                     batch_size_limit: NonZeroUsize::new(123123).unwrap(),
                 },
-                label: Some(cfg.name),
-            })
-        ];
-        
+                label: Some(name),
+            },
+        )];
+
         Ok(Self { endpoints })
     }
 
@@ -53,10 +50,6 @@ impl RpcClient {
         }
 
         last_block
-    }
-
-    pub fn endpoints(&self) -> &[Endpoint] {
-        &self.endpoints
     }
 
     /// Executes the given rpc request without retries

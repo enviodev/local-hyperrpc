@@ -1,9 +1,6 @@
 use super::*;
 
-pub fn handle(
-    rpc_handler: Arc<RpcHandler>,
-    reqs: &Vec<RpcRequest>,
-) -> (Vec<RpcResponse>, QueryMetrics) {
+pub fn handle(rpc_handler: Arc<RpcHandler>, reqs: &Vec<RpcRequest>) -> Vec<RpcResponse> {
     let mut rpc_responses = Vec::new();
 
     for req in reqs {
@@ -18,5 +15,5 @@ pub fn handle(
         ));
     }
 
-    (rpc_responses, QueryMetrics::default())
+    rpc_responses
 }

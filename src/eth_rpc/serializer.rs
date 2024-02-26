@@ -100,9 +100,6 @@ pub fn serialize_individual_response(builder: &mut BytesBuilder, response: &RpcR
                     Some(tx) => builder.push(Bytes::from(serialize_transaction(tx))),
                     None => builder.push_static("null"),
                 },
-                RpcResponseData::FilterId(filter_id) => {
-                    builder.push(Bytes::from(filter_id.encode_hex_with_quotes()))
-                }
                 RpcResponseData::UninstallFilter(filter_uninstalled) => {
                     builder.push(Bytes::from(filter_uninstalled.to_string()));
                 }

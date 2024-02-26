@@ -13,7 +13,6 @@ pub struct RpcErrorCode {
 #[derive(Debug, Clone)]
 pub enum RpcError {
     ParseError(String),
-    MethodNotFound(String),
     InternalError(Arc<anyhow::Error>),
     InvalidParams(String),
     JsonRpcVersionNotSupported(String),
@@ -32,7 +31,6 @@ impl PartialEq for RpcError {
 
         match (self, other) {
             (ParseError(a), ParseError(b)) => a == b,
-            (MethodNotFound(a), MethodNotFound(b)) => a == b,
             (InternalError(a), InternalError(b)) => a.to_string() == b.to_string(),
             (InvalidParams(a), InvalidParams(b)) => a == b,
             (JsonRpcVersionNotSupported(a), JsonRpcVersionNotSupported(b)) => a == b,
@@ -56,10 +54,6 @@ impl RpcError {
             RpcError::ParseError(msg) => RpcErrorCode {
                 code: -32700,
                 message: format!("Invalid JSON: {}", msg),
-            },
-            RpcError::MethodNotFound(msg) => RpcErrorCode {
-                code: -32601,
-                message: format!("Method not found: {}", msg),
             },
             RpcError::InvalidParams(msg) => RpcErrorCode {
                 code: -32602,

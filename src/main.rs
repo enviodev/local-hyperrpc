@@ -1,6 +1,4 @@
-use anyhow::Context;
-
-use local_hyperrpc::{Runner, Args};
+use local_hyperrpc::{Args, Runner};
 use mimalloc::MiMalloc;
 
 #[global_allocator]
@@ -12,8 +10,5 @@ async fn main() {
 
     let args = Args::parse();
 
-    Runner::run(args)
-        .await
-        .unwrap();
+    Runner::run(args).await.unwrap();
 }
-        
