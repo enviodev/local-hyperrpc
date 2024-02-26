@@ -5,7 +5,7 @@ use moka::sync::Cache;
 
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::{
     query_handler::from_arrow::{batch_to_block_headers, batch_to_transactions},
@@ -21,7 +21,7 @@ pub struct QueryHandler {
     client: skar_client::Client,
     blocks_cache: Arc<Cache<u64, Block<Hash>>>,
     blocks_with_txs_cache:
-        Arc<Mutex<Vec<(BlockRange, Arc<Mutex<BTreeMap<u64, Block<Transaction>>>>)>>>,
+        Arc<Mutex<Vec<(BlockRange, Arc<RwLock<BTreeMap<u64, Block<Transaction>>>>)>>>,
     read_ahead: u64,
 }
 
@@ -111,15 +111,15 @@ impl QueryHandler {
             block_range.1 + self.read_ahead,
         );
 
-        let inner_mutex = Arc::new(Mutex::new(BTreeMap::new()));
-        let mut cache_out = inner_mutex.lock().await;
+        let inner_lock = Arc::new(RwLock::new(BTreeMap::new()));
+        let mut cache_out = inner_lock.write().await;
         {
             let mut locks = self.blocks_with_txs_cache.lock().await;
 
             if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
                 let inner_lock = entry.1.clone();
                 std::mem::drop(locks);
-                let map = inner_lock.lock().await;
+                let map = inner_lock.read().await;
                 while block_num < block_range.1 {
                     match map.get(&block_num) {
                         Some(block) => {
@@ -133,7 +133,7 @@ impl QueryHandler {
 
                 return Ok(blocks);
             } else {
-                locks.push((req_range, inner_mutex.clone()));
+                locks.push((req_range, inner_lock.clone()));
             }
         }
 
