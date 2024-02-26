@@ -105,16 +105,22 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
-        let millis = rand::thread_rng().gen_range(1..10) * 10;
-        tokio::time::sleep(Duration::from_millis(millis)).await;
+        let req_range = BlockRange(
+            block_range.0.saturating_sub(self.read_ahead),
+            block_range.1 + self.read_ahead,
+        );
 
+        let inner_mutex = Arc::new(Mutex::new(()));
+        let _ = inner_mutex.clone().lock().await;
         {
-            let locks = self.locks.lock().await;
+            let mut locks = self.locks.lock().await;
 
             if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
                 let inner_lock = entry.1.clone();
                 std::mem::drop(locks);
                 std::mem::drop(inner_lock.lock().await);
+            } else {
+                locks.push((req_range, inner_mutex.clone()));
             }
         }
 
@@ -134,19 +140,6 @@ impl QueryHandler {
 
         if block_num == block_range.1 {
             return Ok(blocks);
-        }
-
-        let req_range = BlockRange(
-            block_range.0.saturating_sub(self.read_ahead),
-            block_range.1 + self.read_ahead,
-        );
-
-        let inner_mutex = Arc::new(Mutex::new(()));
-        let _ = inner_mutex.lock().await;
-        {
-            let mut locks = self.locks.lock().await;
-
-            locks.push((req_range, inner_mutex.clone()))
         }
 
         let query = Query {
