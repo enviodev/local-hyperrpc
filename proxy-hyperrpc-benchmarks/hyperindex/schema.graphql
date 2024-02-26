@@ -1,0 +1,23 @@
+type EventsSummary {
+  id: ID!
+  rocketTokenRETH_Approval: [RocketTokenRETH_Approval!]! @derivedFrom(field: "eventsSummary")
+  rocketTokenRETH_ApprovalCount: BigInt!
+  rocketTokenRETH_Transfer: [RocketTokenRETH_Transfer!]! @derivedFrom(field: "eventsSummary")
+  rocketTokenRETH_TransferCount: BigInt!
+}
+
+type RocketTokenRETH_Approval {
+  id: ID!
+  owner: String!
+  spender: String!
+  value: BigInt!
+  eventsSummary: String!
+}
+
+type RocketTokenRETH_Transfer {
+  id: ID!
+  from: String!
+  to: String!
+  value: BigInt!
+  eventsSummary: String!
+}

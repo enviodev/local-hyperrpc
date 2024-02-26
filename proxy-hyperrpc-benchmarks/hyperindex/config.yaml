@@ -1,0 +1,12 @@
+name: rocketpool-token
+networks:
+- id: 1
+  start_block: 18900000
+  contracts:
+  - name: RocketTokenRETH
+    address:
+    - 0xae78736Cd615f374D3085123A210448E74Fc6393
+    handler: src/EventHandlers.ts
+    events:
+    - event: Approval(address indexed owner, address indexed spender, uint256 value)
+    - event: Transfer(address indexed from, address indexed to, uint256 value)
