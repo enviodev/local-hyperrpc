@@ -50,7 +50,11 @@ impl QueryHandler {
             return Ok(blocks);
         }
 
-        let req_range = BlockRange(block_num, std::cmp::max(block_range.1, block_range.0 + 50));
+        let height = self.client.get_height().await.context("get height")?;
+        let req_range = BlockRange(
+            block_num,
+            std::cmp::min(height + 1, std::cmp::max(block_range.1, block_range.0 + 50)),
+        );
 
         let res = self
             .client
@@ -110,7 +114,11 @@ impl QueryHandler {
             return Ok(blocks);
         }
 
-        let req_range = BlockRange(block_num, std::cmp::max(block_range.1, block_range.0 + 50));
+        let height = self.client.get_height().await.context("get height")?;
+        let req_range = BlockRange(
+            block_num,
+            std::cmp::min(height + 1, std::cmp::max(block_range.1, block_range.0 + 50)),
+        );
 
         let res = self
             .client
