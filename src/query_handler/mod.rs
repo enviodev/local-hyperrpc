@@ -3,7 +3,6 @@ use std::{collections::BTreeMap, sync::Arc, time::Duration};
 use anyhow::{anyhow, Context, Result};
 use moka::sync::Cache;
 
-use rand::Rng;
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
 use tokio::sync::Mutex;
@@ -135,6 +134,14 @@ impl QueryHandler {
             return Ok(blocks);
         }
 
+        let inner_mutex = Arc::new(Mutex::new(()));
+        let _ = inner_mutex.lock().await;
+        {
+            let mut locks = self.locks.lock().await;
+
+            locks.push((block_range, inner_mutex.clone()))
+        }
+
         let height = self.client.get_height().await.context("get height")?;
         let req_range = BlockRange(
             block_num,
@@ -143,14 +150,6 @@ impl QueryHandler {
                 std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
             ),
         );
-
-        let inner_mutex = Arc::new(Mutex::new(()));
-        let _ = inner_mutex.lock().await;
-        {
-            let mut locks = self.locks.lock().await;
-
-            locks.push((req_range, inner_mutex.clone()))
-        }
 
         let query = Query {
             from_block: req_range.0,
