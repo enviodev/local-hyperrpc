@@ -1,8 +1,9 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use moka::sync::Cache;
 
+use rand::Rng;
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
 use tokio::sync::Mutex;
@@ -104,6 +105,8 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
+        tokio::time::sleep(Duration::from_millis((block_range.0 % 10) * 100)).await;
+
         {
             let locks = self.locks.lock().await;
 
@@ -140,34 +143,6 @@ impl QueryHandler {
                 std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
             ),
         );
-
-        {
-            let locks = self.locks.lock().await;
-
-            if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
-                let inner_lock = entry.1.clone();
-                std::mem::drop(locks);
-                std::mem::drop(inner_lock.lock().await);
-            }
-        }
-
-        let mut blocks = BTreeMap::new();
-        let mut block_num = block_range.0;
-
-        while block_num < block_range.1 {
-            match self.blocks_with_txs_cache.get(&block_num) {
-                Some(block) => {
-                    blocks.insert(block_num, block);
-                }
-                None => break,
-            }
-
-            block_num += 1;
-        }
-
-        if block_num == block_range.1 {
-            return Ok(blocks);
-        }
 
         let inner_mutex = Arc::new(Mutex::new(()));
         let _ = inner_mutex.lock().await;
