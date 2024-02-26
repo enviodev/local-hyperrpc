@@ -5,6 +5,7 @@ use moka::sync::Cache;
 
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
+use tokio::sync::Mutex;
 
 use crate::{
     query_handler::from_arrow::{batch_to_block_headers, batch_to_transactions},
@@ -21,6 +22,7 @@ pub struct QueryHandler {
     blocks_cache: Arc<Cache<u64, Block<Hash>>>,
     blocks_with_txs_cache: Arc<Cache<u64, Block<Transaction>>>,
     read_ahead: u64,
+    locks: Arc<Mutex<Vec<(BlockRange, Arc<Mutex<()>>)>>>,
 }
 
 impl QueryHandler {
@@ -30,6 +32,7 @@ impl QueryHandler {
             blocks_with_txs_cache: Arc::new(Cache::new(100_000)),
             blocks_cache: Arc::new(Cache::new(100_000)),
             read_ahead,
+            locks: Default::default(),
         }
     }
 
@@ -101,6 +104,16 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
+        {
+            let locks = self.locks.lock().await;
+
+            if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
+                let inner_lock = entry.1.clone();
+                std::mem::drop(locks);
+                std::mem::drop(inner_lock.lock().await);
+            }
+        }
+
         let mut blocks = BTreeMap::new();
         let mut block_num = block_range.0;
 
@@ -127,6 +140,14 @@ impl QueryHandler {
                 std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
             ),
         );
+
+        let inner_mutex = Arc::new(Mutex::new(()));
+        let _ = inner_mutex.lock().await;
+        {
+            let mut locks = self.locks.lock().await;
+
+            locks.push((req_range, inner_mutex.clone()))
+        }
 
         let query = Query {
             from_block: req_range.0,

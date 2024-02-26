@@ -11,3 +11,9 @@ mod query_handler;
 
 #[derive(Clone, Copy, Debug)]
 struct BlockRange(u64, u64);
+
+impl BlockRange {
+    pub fn contains(&self, other: &Self) -> bool {
+        self.0 <= other.0 && self.1 >= other.1
+    }
+}
