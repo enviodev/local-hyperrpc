@@ -147,7 +147,7 @@ impl QueryHandler {
             block_num,
             std::cmp::min(
                 height + 1,
-                std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
+                std::cmp::max(block_range.1.saturating_sub(self.read_ahead), block_range.0 + self.read_ahead),
             ),
         );
 
