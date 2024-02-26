@@ -1,7 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
-use tokio::sync::RwLock;
+use moka::sync::Cache;
 
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
@@ -18,8 +18,8 @@ pub mod from_arrow;
 #[derive(Clone)]
 pub struct QueryHandler {
     client: skar_client::Client,
-    blocks_cache: Arc<RwLock<BTreeMap<u64, Block<Hash>>>>,
-    blocks_with_txs_cache: Arc<RwLock<BTreeMap<u64, Block<Transaction>>>>,
+    blocks_cache: Arc<Cache<u64, Block<Hash>>>,
+    blocks_with_txs_cache: Arc<Cache<u64, Block<Transaction>>>,
     read_ahead: u64,
 }
 
@@ -27,30 +27,26 @@ impl QueryHandler {
     pub fn new(client: skar_client::Client, read_ahead: u64) -> Self {
         Self {
             client,
-            blocks_with_txs_cache: Arc::new(RwLock::new(BTreeMap::new())),
-            blocks_cache: Arc::new(RwLock::new(BTreeMap::new())),
+            blocks_with_txs_cache: Arc::new(Cache::new(100_000)),
+            blocks_cache: Arc::new(Cache::new(100_000)),
             read_ahead,
         }
     }
 
     pub async fn get_blocks(&self, block_range: BlockRange) -> Result<BTreeMap<u64, Block<Hash>>> {
-        let cache = self.blocks_cache.read().await;
-
         let mut blocks = BTreeMap::new();
         let mut block_num = block_range.0;
 
         while block_num < block_range.1 {
-            match cache.get(&block_num) {
+            match self.blocks_cache.get(&block_num) {
                 Some(block) => {
-                    blocks.insert(block_num, block.clone());
+                    blocks.insert(block_num, block);
                 }
                 None => break,
             }
 
             block_num += 1;
         }
-
-        std::mem::drop(cache);
 
         if block_num == block_range.1 {
             return Ok(blocks);
@@ -64,8 +60,6 @@ impl QueryHandler {
                 std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
             ),
         );
-
-        let mut cache = self.blocks_cache.write().await;
 
         let res = self
             .client
@@ -95,7 +89,7 @@ impl QueryHandler {
         }
 
         for (&k, v) in blocks.range(req_range.0..req_range.1) {
-            cache.insert(k, v.clone());
+            self.blocks_cache.insert(k, v.clone());
         }
 
         blocks.retain(|&k, _| k >= block_range.0 && k < block_range.1);
@@ -107,30 +101,19 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
-        let start = Instant::now();
-
-        let cache = self.blocks_with_txs_cache.read().await;
-
-        log::trace!(
-            "it took {}ms to get cache lock",
-            start.elapsed().as_millis()
-        );
-
         let mut blocks = BTreeMap::new();
         let mut block_num = block_range.0;
 
         while block_num < block_range.1 {
-            match cache.get(&block_num) {
+            match self.blocks_with_txs_cache.get(&block_num) {
                 Some(block) => {
-                    blocks.insert(block_num, block.clone());
+                    blocks.insert(block_num, block);
                 }
                 None => break,
             }
 
             block_num += 1;
         }
-
-        std::mem::drop(cache);
 
         if block_num == block_range.1 {
             return Ok(blocks);
@@ -145,26 +128,28 @@ impl QueryHandler {
             ),
         );
 
-        let mut cache = self.blocks_with_txs_cache.write().await;
+        let query = Query {
+            from_block: req_range.0,
+            to_block: Some(req_range.1),
+            include_all_blocks: true,
+            transactions: vec![TransactionSelection::default()],
+            field_selection: FieldSelection {
+                block: skar_schema::block_header()
+                    .fields
+                    .iter()
+                    .map(|f| f.name.clone())
+                    .collect(),
+                transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        log::trace!("sending skar query: {:?}", &query);
 
         let res = self
             .client
-            .send::<skar_client::ArrowIpc>(&Query {
-                from_block: req_range.0,
-                to_block: Some(req_range.1),
-                include_all_blocks: true,
-                transactions: vec![TransactionSelection::default()],
-                field_selection: FieldSelection {
-                    block: skar_schema::block_header()
-                        .fields
-                        .iter()
-                        .map(|f| f.name.clone())
-                        .collect(),
-                    transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
+            .send::<skar_client::ArrowIpc>(&query)
             .await
             .context("run skar query")?;
 
@@ -181,7 +166,7 @@ impl QueryHandler {
         }
 
         for (&k, v) in blocks.range(req_range.0..req_range.1) {
-            cache.insert(k, v.clone());
+            self.blocks_with_txs_cache.insert(k, v.clone());
         }
 
         blocks.retain(|&k, _| k >= block_range.0 && k < block_range.1);

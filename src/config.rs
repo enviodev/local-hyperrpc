@@ -48,7 +48,7 @@ pub struct EthRpcConfig {
 }
 
 fn default_read_ahead() -> u64 {
-    100
+    20
 }
 
 fn default_max_requests_in_batch() -> usize {
