@@ -74,6 +74,8 @@ impl RpcHandler {
         method: &str,
         reqs: &Vec<RpcRequest>,
     ) -> Vec<RpcResponse> {
+        log::trace!("handling {} reqs of type {}", reqs.len(), method);
+
         match method {
             "eth_newFilter"
             | "eth_getFilterLogs"
