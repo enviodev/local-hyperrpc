@@ -105,6 +105,9 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
+        let mut blocks = BTreeMap::new();
+        let mut block_num = block_range.0;
+
         let req_range = BlockRange(
             block_range.0.saturating_sub(self.read_ahead),
             block_range.1 + self.read_ahead,
@@ -119,27 +122,25 @@ impl QueryHandler {
                 let inner_lock = entry.1.clone();
                 std::mem::drop(locks);
                 std::mem::drop(inner_lock.lock().await);
+                while block_num < block_range.1 {
+                    match self.blocks_with_txs_cache.get(&block_num) {
+                        Some(block) => {
+                            blocks.insert(block_num, block);
+                        }
+                        None => break,
+                    }
+
+                    block_num += 1;
+                }
+
+                if block_num == block_range.1 {
+                    return Ok(blocks);
+                } else {
+                    unreachable!();
+                }
             } else {
                 locks.push((req_range, inner_mutex.clone()));
             }
-        }
-
-        let mut blocks = BTreeMap::new();
-        let mut block_num = block_range.0;
-
-        while block_num < block_range.1 {
-            match self.blocks_with_txs_cache.get(&block_num) {
-                Some(block) => {
-                    blocks.insert(block_num, block);
-                }
-                None => break,
-            }
-
-            block_num += 1;
-        }
-
-        if block_num == block_range.1 {
-            return Ok(blocks);
         }
 
         let query = Query {
