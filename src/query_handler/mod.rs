@@ -1,11 +1,9 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::collections::BTreeMap;
 
 use anyhow::{anyhow, Context, Result};
-use moka::sync::Cache;
 
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
-use tokio::sync::{Mutex, RwLock};
 
 use crate::{
     query_handler::from_arrow::{batch_to_block_headers, batch_to_transactions},
@@ -19,55 +17,19 @@ pub mod from_arrow;
 #[derive(Clone)]
 pub struct QueryHandler {
     client: skar_client::Client,
-    blocks_cache: Arc<Cache<u64, Block<Hash>>>,
-    blocks_with_txs_cache:
-        Arc<Mutex<Vec<(BlockRange, Arc<RwLock<BTreeMap<u64, Block<Transaction>>>>)>>>,
-    read_ahead: u64,
 }
 
 impl QueryHandler {
-    pub fn new(client: skar_client::Client, read_ahead: u64) -> Self {
-        Self {
-            client,
-            blocks_with_txs_cache: Default::default(),
-            blocks_cache: Arc::new(Cache::new(100_000)),
-            read_ahead,
-        }
+    pub fn new(client: skar_client::Client) -> Self {
+        Self { client }
     }
 
     pub async fn get_blocks(&self, block_range: BlockRange) -> Result<BTreeMap<u64, Block<Hash>>> {
-        let mut blocks = BTreeMap::new();
-        let mut block_num = block_range.0;
-
-        while block_num < block_range.1 {
-            match self.blocks_cache.get(&block_num) {
-                Some(block) => {
-                    blocks.insert(block_num, block);
-                }
-                None => break,
-            }
-
-            block_num += 1;
-        }
-
-        if block_num == block_range.1 {
-            return Ok(blocks);
-        }
-
-        let height = self.client.get_height().await.context("get height")?;
-        let req_range = BlockRange(
-            block_num,
-            std::cmp::min(
-                height + 1,
-                std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
-            ),
-        );
-
         let res = self
             .client
             .send::<skar_client::ArrowIpc>(&Query {
-                from_block: req_range.0,
-                to_block: Some(req_range.1),
+                from_block: block_range.0,
+                to_block: Some(block_range.1),
                 include_all_blocks: true,
                 field_selection: FieldSelection {
                     block: skar_schema::block_header()
@@ -82,19 +44,15 @@ impl QueryHandler {
             .await
             .context("run skar query")?;
 
-        if res.next_block != req_range.1 {
+        if res.next_block != block_range.1 {
             return Err(anyhow!("Request took too long to handle"));
         }
+
+        let mut blocks = BTreeMap::new();
 
         for batch in res.data.blocks {
             batch_to_block_headers(batch, &mut blocks).context("batch to blocks")?;
         }
-
-        for (&k, v) in blocks.range(req_range.0..req_range.1) {
-            self.blocks_cache.insert(k, v.clone());
-        }
-
-        blocks.retain(|&k, _| k >= block_range.0 && k < block_range.1);
 
         Ok(blocks)
     }
@@ -103,70 +61,32 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
-        let mut blocks = BTreeMap::new();
-        let mut block_num = block_range.0;
-
-        let req_range = BlockRange(
-            block_range.0.saturating_sub(self.read_ahead),
-            block_range.1 + self.read_ahead,
-        );
-
-        let inner_lock = Arc::new(RwLock::new(BTreeMap::new()));
-        let mut cache_out = inner_lock.write().await;
-        {
-            let mut locks = self.blocks_with_txs_cache.lock().await;
-
-            if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
-                let inner_lock = entry.1.clone();
-                std::mem::drop(locks);
-                let map = inner_lock.read().await;
-                while block_num < block_range.1 {
-                    match map.get(&block_num) {
-                        Some(block) => {
-                            blocks.insert(block_num, block.clone());
-                        }
-                        None => unreachable!(),
-                    }
-
-                    block_num += 1;
-                }
-
-                return Ok(blocks);
-            } else {
-                locks.push((req_range, inner_lock.clone()));
-            }
-        }
-
-        let query = Query {
-            from_block: req_range.0,
-            to_block: Some(req_range.1),
-            include_all_blocks: true,
-            transactions: vec![TransactionSelection::default()],
-            field_selection: FieldSelection {
-                block: skar_schema::block_header()
-                    .fields
-                    .iter()
-                    .map(|f| f.name.clone())
-                    .collect(),
-                transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        log::trace!("sending skar query: {:?}", &query);
-
         let res = self
             .client
-            .send::<skar_client::ArrowIpc>(&query)
+            .send::<skar_client::ArrowIpc>(&Query {
+                from_block: block_range.0,
+                to_block: Some(block_range.1),
+                include_all_blocks: true,
+                transactions: vec![TransactionSelection::default()],
+                field_selection: FieldSelection {
+                    block: skar_schema::block_header()
+                        .fields
+                        .iter()
+                        .map(|f| f.name.clone())
+                        .collect(),
+                    transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .await
             .context("run skar query")?;
 
-        if res.next_block != req_range.1
-            && Some(res.next_block.saturating_sub(1)) != res.archive_height
-        {
+        if res.next_block != block_range.1 {
             return Err(anyhow!("Request took too long to handle"));
         }
+
+        let mut blocks = BTreeMap::new();
 
         for batch in res.data.blocks {
             batch_to_block_headers(batch, &mut blocks).context("batch to blocks")?;
@@ -175,12 +95,6 @@ impl QueryHandler {
         for batch in res.data.transactions {
             batch_to_transactions(batch, &mut blocks).context("batch to transactions")?;
         }
-
-        for (&k, v) in blocks.range(req_range.0..req_range.1) {
-            cache_out.insert(k, v.clone());
-        }
-
-        blocks.retain(|&k, _| k >= block_range.0 && k < block_range.1);
 
         Ok(blocks)
     }
