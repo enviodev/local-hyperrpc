@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use anyhow::{anyhow, Context, Result};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
@@ -18,8 +18,8 @@ pub mod from_arrow;
 #[derive(Clone)]
 pub struct QueryHandler {
     client: skar_client::Client,
-    blocks_cache: Arc<Mutex<BTreeMap<u64, Block<Hash>>>>,
-    blocks_with_txs_cache: Arc<Mutex<BTreeMap<u64, Block<Transaction>>>>,
+    blocks_cache: Arc<RwLock<BTreeMap<u64, Block<Hash>>>>,
+    blocks_with_txs_cache: Arc<RwLock<BTreeMap<u64, Block<Transaction>>>>,
     read_ahead: u64,
 }
 
@@ -27,14 +27,14 @@ impl QueryHandler {
     pub fn new(client: skar_client::Client, read_ahead: u64) -> Self {
         Self {
             client,
-            blocks_with_txs_cache: Arc::new(Mutex::new(BTreeMap::new())),
-            blocks_cache: Arc::new(Mutex::new(BTreeMap::new())),
+            blocks_with_txs_cache: Arc::new(RwLock::new(BTreeMap::new())),
+            blocks_cache: Arc::new(RwLock::new(BTreeMap::new())),
             read_ahead,
         }
     }
 
     pub async fn get_blocks(&self, block_range: BlockRange) -> Result<BTreeMap<u64, Block<Hash>>> {
-        let mut cache = self.blocks_cache.lock().await;
+        let cache = self.blocks_cache.read().await;
 
         let mut blocks = BTreeMap::new();
         let mut block_num = block_range.0;
@@ -50,6 +50,8 @@ impl QueryHandler {
             block_num += 1;
         }
 
+        std::mem::drop(cache);
+
         if block_num == block_range.1 {
             return Ok(blocks);
         }
@@ -62,6 +64,8 @@ impl QueryHandler {
                 std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
             ),
         );
+
+        let mut cache = self.blocks_cache.write().await;
 
         let res = self
             .client
@@ -105,7 +109,7 @@ impl QueryHandler {
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
         let start = Instant::now();
 
-        let mut cache = self.blocks_with_txs_cache.lock().await;
+        let cache = self.blocks_with_txs_cache.read().await;
 
         log::trace!(
             "it took {}ms to get cache lock",
@@ -126,6 +130,8 @@ impl QueryHandler {
             block_num += 1;
         }
 
+        std::mem::drop(cache);
+
         if block_num == block_range.1 {
             return Ok(blocks);
         }
@@ -138,6 +144,8 @@ impl QueryHandler {
                 std::cmp::max(block_range.1, block_range.0 + self.read_ahead),
             ),
         );
+
+        let mut cache = self.blocks_with_txs_cache.write().await;
 
         let res = self
             .client
