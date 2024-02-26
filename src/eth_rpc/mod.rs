@@ -35,8 +35,18 @@ pub struct RpcHandler {
 
 impl RpcHandler {
     pub fn new(skar_client: SkarClient, rpc_cfg: EthRpcConfig) -> Result<Self> {
-        let rpc_client = RpcClient::new("FallbackRPC".to_owned(), rpc_cfg.fallback_url)
-            .context("create rpc client")?;
+        let (fallback_name, fallback_url) = if let Some(fallback_url) = rpc_cfg.fallback_url {
+            ("FallbackRPC".to_owned(), fallback_url)
+        } else {
+            let mesc_cfg = mesc::get_endpoint_by_network(rpc_cfg.rpc_chain_id, None)
+                .context("load mesc config")?
+                .context("endpoint for this chain not found")?;
+
+            (mesc_cfg.name, mesc_cfg.url)
+        };
+
+        let rpc_client =
+            RpcClient::new(fallback_name, fallback_url).context("create rpc client")?;
 
         let hyperrpc_client = RpcClient::new("HyperRPC".to_owned(), rpc_cfg.hyperrpc_url)
             .context("create hyperrpc client")?;

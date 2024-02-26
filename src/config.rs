@@ -22,7 +22,7 @@ pub struct EthRpcConfig {
     #[serde(default)]
     pub hyperrpc_is_stateful: bool,
     /// Fallback RPC url
-    pub fallback_url: String,
+    pub fallback_url: Option<String>,
     ///  Maximum number of requests in a batch request
     #[serde(default = "default_max_requests_in_batch")]
     pub max_requests_in_batch: usize,
