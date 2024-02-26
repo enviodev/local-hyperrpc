@@ -128,24 +128,28 @@ impl QueryHandler {
             ),
         );
 
+        let query = Query {
+            from_block: req_range.0,
+            to_block: Some(req_range.1),
+            include_all_blocks: true,
+            transactions: vec![TransactionSelection::default()],
+            field_selection: FieldSelection {
+                block: skar_schema::block_header()
+                    .fields
+                    .iter()
+                    .map(|f| f.name.clone())
+                    .collect(),
+                transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        log::trace!("sending skar query: {:?}", &query);
+
         let res = self
             .client
-            .send::<skar_client::ArrowIpc>(&Query {
-                from_block: req_range.0,
-                to_block: Some(req_range.1),
-                include_all_blocks: true,
-                transactions: vec![TransactionSelection::default()],
-                field_selection: FieldSelection {
-                    block: skar_schema::block_header()
-                        .fields
-                        .iter()
-                        .map(|f| f.name.clone())
-                        .collect(),
-                    transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
-                    ..Default::default()
-                },
-                ..Default::default()
-            })
+            .send::<skar_client::ArrowIpc>(&query)
             .await
             .context("run skar query")?;
 
