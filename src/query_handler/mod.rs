@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
-use moka::sync::Cache;
+use tokio::sync::Mutex;
 
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
@@ -18,8 +18,8 @@ pub mod from_arrow;
 #[derive(Clone)]
 pub struct QueryHandler {
     client: skar_client::Client,
-    blocks_cache: Arc<Cache<u64, Block<Hash>>>,
-    blocks_with_txs_cache: Arc<Cache<u64, Block<Transaction>>>,
+    blocks_cache: Arc<Mutex<BTreeMap<u64, Block<Hash>>>>,
+    blocks_with_txs_cache: Arc<Mutex<BTreeMap<u64, Block<Transaction>>>>,
     read_ahead: u64,
 }
 
@@ -27,20 +27,22 @@ impl QueryHandler {
     pub fn new(client: skar_client::Client, read_ahead: u64) -> Self {
         Self {
             client,
-            blocks_with_txs_cache: Arc::new(Cache::new(100_000)),
-            blocks_cache: Arc::new(Cache::new(100_000)),
+            blocks_with_txs_cache: Arc::new(Mutex::new(BTreeMap::new())),
+            blocks_cache: Arc::new(Mutex::new(BTreeMap::new())),
             read_ahead,
         }
     }
 
     pub async fn get_blocks(&self, block_range: BlockRange) -> Result<BTreeMap<u64, Block<Hash>>> {
+        let mut cache = self.blocks_cache.lock().await;
+
         let mut blocks = BTreeMap::new();
         let mut block_num = block_range.0;
 
         while block_num < block_range.1 {
-            match self.blocks_cache.get(&block_num) {
+            match cache.get(&block_num) {
                 Some(block) => {
-                    blocks.insert(block_num, block);
+                    blocks.insert(block_num, block.clone());
                 }
                 None => break,
             }
@@ -89,7 +91,7 @@ impl QueryHandler {
         }
 
         for (&k, v) in blocks.range(req_range.0..req_range.1) {
-            self.blocks_cache.insert(k, v.clone());
+            cache.insert(k, v.clone());
         }
 
         blocks.retain(|&k, _| k >= block_range.0 && k < block_range.1);
@@ -101,13 +103,15 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
+        let mut cache = self.blocks_with_txs_cache.lock().await;
+
         let mut blocks = BTreeMap::new();
         let mut block_num = block_range.0;
 
         while block_num < block_range.1 {
-            match self.blocks_with_txs_cache.get(&block_num) {
+            match cache.get(&block_num) {
                 Some(block) => {
-                    blocks.insert(block_num, block);
+                    blocks.insert(block_num, block.clone());
                 }
                 None => break,
             }
@@ -166,7 +170,7 @@ impl QueryHandler {
         }
 
         for (&k, v) in blocks.range(req_range.0..req_range.1) {
-            self.blocks_with_txs_cache.insert(k, v.clone());
+            cache.insert(k, v.clone());
         }
 
         blocks.retain(|&k, _| k >= block_range.0 && k < block_range.1);
