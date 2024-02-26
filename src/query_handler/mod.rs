@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use moka::sync::Cache;
@@ -104,14 +104,11 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
-        {
-            let locks = self.locks.lock().await;
+        let mut locks = self.locks.lock().await;
 
-            if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
-                let inner_lock = entry.1.clone();
-                std::mem::drop(locks);
-                std::mem::drop(inner_lock.lock().await);
-            }
+        if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
+            let inner_lock = entry.1.clone();
+            std::mem::drop(inner_lock.lock().await);
         }
 
         let mut blocks = BTreeMap::new();
@@ -132,22 +129,15 @@ impl QueryHandler {
             return Ok(blocks);
         }
 
-        let height = self.client.get_height().await.context("get height")?;
         let req_range = BlockRange(
-            block_num,
-            std::cmp::min(
-                height + 1,
-                std::cmp::max(block_range.1.saturating_sub(self.read_ahead), block_range.0 + self.read_ahead),
-            ),
+            block_range.0.saturating_sub(self.read_ahead),
+            block_range.1 + self.read_ahead,
         );
 
         let inner_mutex = Arc::new(Mutex::new(()));
         let _ = inner_mutex.lock().await;
-        {
-            let mut locks = self.locks.lock().await;
-
-            locks.push((req_range, inner_mutex.clone()))
-        }
+        locks.push((req_range, inner_mutex.clone()));
+        std::mem::drop(locks);
 
         let query = Query {
             from_block: req_range.0,
@@ -174,7 +164,9 @@ impl QueryHandler {
             .await
             .context("run skar query")?;
 
-        if res.next_block != req_range.1 {
+        if res.next_block != req_range.1
+            && Some(res.next_block.saturating_sub(1)) != res.archive_height
+        {
             return Err(anyhow!("Request took too long to handle"));
         }
 
