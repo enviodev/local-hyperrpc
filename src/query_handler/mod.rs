@@ -1,9 +1,8 @@
-use std::{collections::BTreeMap, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use moka::sync::Cache;
 
-use rand::Rng;
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
 use tokio::sync::Mutex;
@@ -21,19 +20,18 @@ pub mod from_arrow;
 pub struct QueryHandler {
     client: skar_client::Client,
     blocks_cache: Arc<Cache<u64, Block<Hash>>>,
-    blocks_with_txs_cache: Arc<Cache<u64, Block<Transaction>>>,
+    blocks_with_txs_cache:
+        Arc<Mutex<Vec<(BlockRange, Arc<Mutex<BTreeMap<u64, Block<Transaction>>>>)>>>,
     read_ahead: u64,
-    locks: Arc<Mutex<Vec<(BlockRange, Arc<Mutex<()>>)>>>,
 }
 
 impl QueryHandler {
     pub fn new(client: skar_client::Client, read_ahead: u64) -> Self {
         Self {
             client,
-            blocks_with_txs_cache: Arc::new(Cache::new(100_000)),
+            blocks_with_txs_cache: Default::default(),
             blocks_cache: Arc::new(Cache::new(100_000)),
             read_ahead,
-            locks: Default::default(),
         }
     }
 
@@ -113,31 +111,27 @@ impl QueryHandler {
             block_range.1 + self.read_ahead,
         );
 
-        let inner_mutex = Arc::new(Mutex::new(()));
-        let _ = inner_mutex.clone().lock().await;
+        let inner_mutex = Arc::new(Mutex::new(BTreeMap::new()));
+        let mut cache_out = inner_mutex.lock().await;
         {
-            let mut locks = self.locks.lock().await;
+            let mut locks = self.blocks_with_txs_cache.lock().await;
 
             if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
                 let inner_lock = entry.1.clone();
                 std::mem::drop(locks);
-                std::mem::drop(inner_lock.lock().await);
+                let map = inner_lock.lock().await;
                 while block_num < block_range.1 {
-                    match self.blocks_with_txs_cache.get(&block_num) {
+                    match map.get(&block_num) {
                         Some(block) => {
-                            blocks.insert(block_num, block);
+                            blocks.insert(block_num, block.clone());
                         }
-                        None => break,
+                        None => unreachable!(),
                     }
 
                     block_num += 1;
                 }
 
-                if block_num == block_range.1 {
-                    return Ok(blocks);
-                } else {
-                    unreachable!();
-                }
+                return Ok(blocks);
             } else {
                 locks.push((req_range, inner_mutex.clone()));
             }
@@ -183,7 +177,7 @@ impl QueryHandler {
         }
 
         for (&k, v) in blocks.range(req_range.0..req_range.1) {
-            self.blocks_with_txs_cache.insert(k, v.clone());
+            cache_out.insert(k, v.clone());
         }
 
         blocks.retain(|&k, _| k >= block_range.0 && k < block_range.1);
