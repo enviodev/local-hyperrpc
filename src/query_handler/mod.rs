@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Instant};
 
 use anyhow::{anyhow, Context, Result};
 use tokio::sync::Mutex;
@@ -103,7 +103,14 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
+        let start = Instant::now();
+
         let mut cache = self.blocks_with_txs_cache.lock().await;
+
+        log::trace!(
+            "it took {}ms to get cache lock",
+            start.elapsed().as_millis()
+        );
 
         let mut blocks = BTreeMap::new();
         let mut block_num = block_range.0;
@@ -132,28 +139,24 @@ impl QueryHandler {
             ),
         );
 
-        let query = Query {
-            from_block: req_range.0,
-            to_block: Some(req_range.1),
-            include_all_blocks: true,
-            transactions: vec![TransactionSelection::default()],
-            field_selection: FieldSelection {
-                block: skar_schema::block_header()
-                    .fields
-                    .iter()
-                    .map(|f| f.name.clone())
-                    .collect(),
-                transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
-                ..Default::default()
-            },
-            ..Default::default()
-        };
-
-        log::trace!("sending skar query: {:?}", &query);
-
         let res = self
             .client
-            .send::<skar_client::ArrowIpc>(&query)
+            .send::<skar_client::ArrowIpc>(&Query {
+                from_block: req_range.0,
+                to_block: Some(req_range.1),
+                include_all_blocks: true,
+                transactions: vec![TransactionSelection::default()],
+                field_selection: FieldSelection {
+                    block: skar_schema::block_header()
+                        .fields
+                        .iter()
+                        .map(|f| f.name.clone())
+                        .collect(),
+                    transaction: TX_FIELDS.iter().map(|&f| f.to_owned()).collect(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
             .await
             .context("run skar query")?;
 
