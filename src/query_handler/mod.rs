@@ -1,8 +1,9 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
 use moka::sync::Cache;
 
+use rand::Rng;
 use skar_format::{Block, Hash, Transaction, TransactionReceipt};
 use skar_net_types::{FieldSelection, Query, TransactionSelection};
 use tokio::sync::Mutex;
@@ -104,11 +105,17 @@ impl QueryHandler {
         &self,
         block_range: BlockRange,
     ) -> Result<BTreeMap<u64, Block<Transaction>>> {
-        let mut locks = self.locks.lock().await;
+        let millis = rand::thread_rng().gen_range(1..10) * 10;
+        tokio::time::sleep(Duration::from_millis(millis)).await;
 
-        if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
-            let inner_lock = entry.1.clone();
-            std::mem::drop(inner_lock.lock().await);
+        {
+            let locks = self.locks.lock().await;
+
+            if let Some(entry) = locks.iter().find(|l| l.0.contains(&block_range)) {
+                let inner_lock = entry.1.clone();
+                std::mem::drop(locks);
+                std::mem::drop(inner_lock.lock().await);
+            }
         }
 
         let mut blocks = BTreeMap::new();
@@ -136,8 +143,11 @@ impl QueryHandler {
 
         let inner_mutex = Arc::new(Mutex::new(()));
         let _ = inner_mutex.lock().await;
-        locks.push((req_range, inner_mutex.clone()));
-        std::mem::drop(locks);
+        {
+            let mut locks = self.locks.lock().await;
+
+            locks.push((req_range, inner_mutex.clone()))
+        }
 
         let query = Query {
             from_block: req_range.0,
