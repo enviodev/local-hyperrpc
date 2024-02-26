@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use anyhow::{anyhow, Context, Result};
 use moka::sync::Cache;
@@ -18,8 +18,8 @@ pub mod from_arrow;
 #[derive(Clone)]
 pub struct QueryHandler {
     client: skar_client::Client,
-    blocks_cache: Cache<u64, Block<Hash>>,
-    blocks_with_txs_cache: Cache<u64, Block<Transaction>>,
+    blocks_cache: Arc<Cache<u64, Block<Hash>>>,
+    blocks_with_txs_cache: Arc<Cache<u64, Block<Transaction>>>,
     read_ahead: u64,
 }
 
@@ -27,8 +27,8 @@ impl QueryHandler {
     pub fn new(client: skar_client::Client, read_ahead: u64) -> Self {
         Self {
             client,
-            blocks_with_txs_cache: Cache::new(100_000),
-            blocks_cache: Cache::new(100_000),
+            blocks_with_txs_cache: Arc::new(Cache::new(100_000)),
+            blocks_cache: Arc::new(Cache::new(100_000)),
             read_ahead,
         }
     }
