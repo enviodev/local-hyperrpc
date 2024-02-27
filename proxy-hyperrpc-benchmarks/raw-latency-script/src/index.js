@@ -14,15 +14,20 @@ const endpoints = {
   BLAST: process.env.BLAST,
 };
 
-const ethBlockNumberRPCRequest = {
-  id: 1,
-  jsonrpc: "2.0",
-  method: "eth_blockNumber",
+const seedBlock = 19118338;
+const seedBlockHex = "0x" + seedBlock.toString(16);
+
+const ethBlockNumberRPCRequest = (_) => {
+  return {
+    id: 1,
+    jsonrpc: "2.0",
+    method: "eth_blockNumber",
+    params: [],
+  };
 };
 
-const ethGetLogsRPCRequest = () => {
-  let seedBlock = 0x989610;
-  let startBlock = getRandomBlock(seedBlock);
+const ethGetLogsRPCRequest = (randomBlockNumber) => {
+  let startBlock = randomBlockNumber;
   let endBlock = startBlock + 100;
   let startBlockHex = "0x" + startBlock.toString(16);
   let endBlockHex = "0x" + endBlock.toString(16);
@@ -46,13 +51,15 @@ const ethGetLogsRPCRequest = () => {
   return requestBody;
 };
 
-const ethGetBlockReceiptsRPCRequest = () => {
-  let seedBlock = 0x989610; // doesnt really matter as long as this is less than the latest block
+const ethGetBlockReceiptsRPCRequest = (randomBlockNumber) => {
+  let blockNumberHex = "0x" + randomBlockNumber.toString(16);
+
   return {
     id: 1,
     jsonrpc: "2.0",
     method: "eth_getBlockReceipts",
-    params: ["0x" + getRandomBlock(seedBlock).toString(16)],
+    // params: ["latest"],
+    params: [blockNumberHex],
   };
 };
 
@@ -60,11 +67,14 @@ const ethGetBlockReceiptsRPCRequest = () => {
 async function makeRPCRequest(endpoint, request) {
   const startTime = performance.now();
   try {
-    await fetch(endpoint, {
+    let resp = await fetch(endpoint, {
       method: "POST",
       body: JSON.stringify(request),
       headers: { "Content-Type": "application/json" },
     });
+    if (!resp.ok) {
+      console.warn("Request failed", resp);
+    }
     const endTime = performance.now();
     return endTime - startTime; // Return time taken in milliseconds
   } catch (error) {
@@ -85,9 +95,20 @@ function getRandomBlock(seedBlock) {
 // Main function to run benchmarks
 async function runBenchmarks() {
   let methods = [
-    { name: "eth_blockNumber", method: ethBlockNumberRPCRequest },
-    { name: "eth_getLogs", method: ethGetLogsRPCRequest() },
-    { name: "eth_getBlockReceipts", method: ethGetBlockReceiptsRPCRequest() },
+    {
+      name: "eth_blockNumber",
+      method: (randomBlockNumber) =>
+        ethBlockNumberRPCRequest(randomBlockNumber),
+    },
+    {
+      name: "eth_getLogs",
+      method: (randomBlockNumber) => ethGetLogsRPCRequest(randomBlockNumber),
+    },
+    {
+      name: "eth_getBlockReceipts",
+      method: (randomBlockNumber) =>
+        ethGetBlockReceiptsRPCRequest(randomBlockNumber),
+    },
   ];
 
   // these data structures could be improved
@@ -103,6 +124,7 @@ async function runBenchmarks() {
   }; // Object to store summary results
 
   for (let method of methods) {
+    console.log(`\n`);
     console.log(`Benchmarking ${method.name}`);
     console.log(`--------`);
     // Iterate over RPC endpoints
@@ -115,7 +137,11 @@ async function runBenchmarks() {
 
       for (let i = 0; i < iterations; i++) {
         // Make eth_getLogs RPC request
-        const requestTime = await makeRPCRequest(endpoint, method.method);
+        let blockNumber = getRandomBlock(seedBlockHex);
+        const requestTime = await makeRPCRequest(
+          endpoint,
+          method.method(blockNumber)
+        );
         if (requestTime !== null) {
           requestTimes.push(requestTime);
         }
