@@ -75,6 +75,7 @@ async function makeRPCRequest(endpoint, request) {
     });
     if (!resp.ok) {
       console.warn("Request failed", resp);
+      resp.data;
     }
     const endTime = performance.now();
     return endTime - startTime; // Return time taken in milliseconds
@@ -128,8 +129,20 @@ async function runBenchmarks() {
     console.log(`\n`);
     console.log(`Benchmarking ${method.name}`);
     console.log(`--------`);
+
+    // Take the array of endpoints and remove the ones that are ignored in the array environment variable IGNORE_ENDPOINTS
+    const ignoreEndpoints = process.env.IGNORE_ENDPOINTS
+      ? process.env.IGNORE_ENDPOINTS.split(",")
+      : [];
+
+    const filteredEndpoints = Object.fromEntries(
+      Object.entries(endpoints).filter(
+        ([key, _]) => !ignoreEndpoints.includes(key)
+      )
+    );
+
     // Iterate over RPC endpoints
-    for (const [endpointName, endpoint] of Object.entries(endpoints)) {
+    for (const [endpointName, endpoint] of Object.entries(filteredEndpoints)) {
       console.log(`Benchmarking ${endpointName}...`);
       const requestTimes = [];
 

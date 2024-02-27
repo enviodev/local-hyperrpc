@@ -76,7 +76,8 @@ Except where the fromBlock value and toBlock value are randomized with the same 
 `pnpm i`
 `pnpm start`
 `ITERATIONS=100 pnpm start` Run with 100 iterations
-`ETH_GETLOGS_BLOCKRANGE=1_000 pnpm start` Run with 100 iterations
+`ETH_GETLOGS_BLOCKRANGE=1000 pnpm start` Run with a block range of 1000 for eth_getLogs
+`IGNORE_ENDPOINTS=OUR_NODE,BLAST pnpm start` Ignore some of the rpc endpoints
 
 # Furtherwork
 
