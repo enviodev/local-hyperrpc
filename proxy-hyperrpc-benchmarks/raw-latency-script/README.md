@@ -44,4 +44,7 @@ The script uses the native node-fetch library and makes the following request (e
 
 Except where the fromBlock value and toBlock value are randomized with the same block range of 100 blocks to prevent cached rpc requests from influencing the results. The block range is in hex values.
 
-To run the benchmarks run `yarn start`
+# Run
+
+`pnpm i`
+`pnpm start`

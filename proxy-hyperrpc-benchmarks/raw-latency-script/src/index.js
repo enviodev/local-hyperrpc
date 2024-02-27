@@ -118,6 +118,9 @@ async function runBenchmarks() {
     .join("\n");
   fs.writeFileSync(latestResultsFilePath, latestResultsContent);
   console.log(`Latest results saved to ${latestResultsFilePath}`);
+  console.log("Summary results");
+  console.log("----------");
+  console.log(latestResultsContent);
 }
 
 // Run benchmarks
