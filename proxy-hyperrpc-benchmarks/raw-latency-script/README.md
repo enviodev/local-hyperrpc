@@ -7,6 +7,8 @@ The raw results from the run are saved into the folder `data/raw` and are saved 
 The following rpc methods are tested;
 
 `eth_getLogs`
+`eth_blockNumber`
+`eth_getBlockReceipts`
 
 Each method is benchmarked on the following rpc endpoints (the actual endpoints are stored in the .env file) here is the .env.example file
 
@@ -22,7 +24,11 @@ The raw data files stored in results-(timestamp).json as an object per rpc metho
 
 The results.txt file displays this as a table for each rpc method with the average time in milliseconds for each rpc endpoint.
 
-The script uses the native node-fetch library and makes the following request (eth_getLogs of USDT transfers)
+The script uses the native node-fetch library and makes the following requests
+
+## eth_getLogs
+
+(eth_getLogs of USDT transfers)
 
 ```json
 {
@@ -44,7 +50,33 @@ The script uses the native node-fetch library and makes the following request (e
 
 Except where the fromBlock value and toBlock value are randomized with the same block range of 100 blocks to prevent cached rpc requests from influencing the results. The block range is in hex values.
 
+## eth_blockNumber (susceptible to caching)
+
+```json
+{
+  "id": 1,
+  "jsonrpc": "2.0",
+  "method": "eth_blockNumber"
+}
+```
+
+## eth_getBlockReceipts (with rnd block num)
+
+{
+"id": 1,
+"jsonrpc": "2.0",
+"method": "eth_getBlockReceipts",
+"params": [
+"latest"
+]
+}
+
 # Run
 
 `pnpm i`
 `pnpm start`
+`ITERATIONS=100 pnpm start` Run with 100 iterations
+
+# Furtherwork
+
+- Add additional data to the raw data & summaries such as the number of iterations, the system run on and possibly the internet speed etc
