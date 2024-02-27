@@ -14,7 +14,7 @@ const endpoints = {
   BLAST: process.env.BLAST,
 };
 
-const seedBlock = 19118338;
+const seedBlock = 18118338;
 const seedBlockHex = "0x" + seedBlock.toString(16);
 
 const ethBlockNumberRPCRequest = (_) => {
@@ -27,10 +27,11 @@ const ethBlockNumberRPCRequest = (_) => {
 };
 
 const ethGetLogsRPCRequest = (randomBlockNumber) => {
-  let startBlock = randomBlockNumber;
-  let endBlock = startBlock + 100;
-  let startBlockHex = "0x" + startBlock.toString(16);
-  let endBlockHex = "0x" + endBlock.toString(16);
+  const startBlock = randomBlockNumber;
+  const blockRange = process.env.ETH_GETLOGS_BLOCKRANGE || 10_000;
+  const endBlock = startBlock + blockRange;
+  const startBlockHex = "0x" + startBlock.toString(16);
+  const endBlockHex = "0x" + endBlock.toString(16);
 
   const requestBody = {
     id: 1,

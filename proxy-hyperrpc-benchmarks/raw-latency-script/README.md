@@ -76,6 +76,7 @@ Except where the fromBlock value and toBlock value are randomized with the same 
 `pnpm i`
 `pnpm start`
 `ITERATIONS=100 pnpm start` Run with 100 iterations
+`ETH_GETLOGS_BLOCKRANGE=1_000 pnpm start` Run with 100 iterations
 
 # Furtherwork
 
