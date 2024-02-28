@@ -1,0 +1,17 @@
+{
+  "name": "raw-latency-script",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "fs": "0.0.1-security",
+    "node-fetch": "^2.6.1"
+  }
+}
