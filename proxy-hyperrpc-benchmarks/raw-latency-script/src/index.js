@@ -158,6 +158,9 @@ async function runBenchmarks() {
         );
         if (requestTime !== null) {
           requestTimes.push(requestTime);
+          if (process.env.VERBOSE == "true") {
+            console.log(`${i + 1}/${iterations}: ${requestTime.toFixed(2)} ms`);
+          }
         }
       }
 
