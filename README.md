@@ -31,7 +31,7 @@ url = "https://arbitrum.hypersync.xyz"
 Here we specify:
 - `rpc_chain_id` which can be found on chainlist by searching for network name.
 - `hyperrpc_url` and `hypersync.url` can be found on envio docs or can just replace eth with your network name (polygon, bsc, optimism etc.)
-- `fallback_url` is an rpc endpoint you provide. Can put a garbage url here if you are not using methods that are not provided by the proxy. We implement most read methods so not supported methods can be trace calls or write methods. Can also put a garbage url and test if it works out.
+- `fallback_url` (optional) is an rpc endpoint you provide. If this is omitted, the program will try to get this url from `mesc` config. It checks the default url for the configured chain_id using `mesc`.
 - `addr` is the http socket address the proxy will listen to. When proxy is running you can make regular RPC requests to this address in your machine and the proxy will handle them.
 
 ### Start the proxy
